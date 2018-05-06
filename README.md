@@ -1,0 +1,20 @@
+# RL for MuJoCo
+
+This package  contains implimentations of various RL algorithms for continuous control tasks simulated with [MuJoCo.](http://www.mujoco.org/).
+
+# Installation
+The main package dependencies are `python=3.5`, `gym`, `mujoco-py`, and `pytorch`. See `setup/README.md` for detailed install instructions.
+
+# Bibliography
+If you find the package useful, please cite the following paper.
+```
+@inproceedings{Rajeswaran17generalization, 
+    title = "{Towards Generalization and Simplicity in Continuous Control}",
+    author = {Aravind Rajeswaran and Kendall Lowrey and Emanuel Todorov and Sham Kakade},
+    booktitle = {NIPS},
+    year = {2017},
+}
+```
+
+# Credits
+This package is maintained by [Aravind Rajeswaran](http://aravindr93.github.io/) and other members of the [Movement Control Lab,](http://homes.cs.washington.edu/~todorov/) University of Washington Seattle.
