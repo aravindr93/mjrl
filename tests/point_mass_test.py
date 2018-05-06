@@ -18,9 +18,9 @@ train_agent(job_name='point_mass_exp1',
             agent=agent,
             seed=SEED,
             niter=50,
-            gamma=0.95,       # approx 1-(1/horizon)
-            gae_lambda=0.97,  # from paper
-            num_cpu=4,
+            gamma=0.95,
+            gae_lambda=0.97,
+            num_cpu=1,
             sample_mode='trajectories',
             num_traj=40,      # samples = 40*25 = 1000
             save_freq=5,

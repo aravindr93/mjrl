@@ -20,7 +20,7 @@ train_agent(job_name='swimmer_exp1',
             niter=50,
             gamma=0.995,  
             gae_lambda=0.97,
-            num_cpu=5,
+            num_cpu=1,
             sample_mode='trajectories',
             num_traj=10,      # samples = 10*500 = 5000
             save_freq=5,
