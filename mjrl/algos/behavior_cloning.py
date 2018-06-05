@@ -13,6 +13,7 @@ class BC:
                  policy,
                  epochs = 5,
                  batch_size = 64,
+                 lr = 1e-3,
                  optimizer = None):
 
         self.policy = policy
@@ -32,7 +33,7 @@ class BC:
         self.policy.old_model.set_transformations(in_shift, in_scale, out_shift, out_scale)
 
         # construct optimizer
-        self.optimizer = torch.optim.Adam(self.policy.trainable_params) if optimizer is None else optimizer
+        self.optimizer = torch.optim.Adam(self.policy.trainable_params, lr=lr) if optimizer is None else optimizer
 
     def loss(self, obs, act):
         LL, mu, log_std = self.policy.new_dist_info(obs, act)
