@@ -85,6 +85,7 @@ dependencies:
 - testpath=0.3.1=py35had42eaf_0
 - tk=8.6.7=hc745277_3
 - tornado=4.5.3=py35_0
+- tqdm
 - traitlets=4.3.2=py35ha522a97_0
 - wcwidth=0.1.7=py35hcd08066_0
 - webencodings=0.5.1=py35hb6cf162_1

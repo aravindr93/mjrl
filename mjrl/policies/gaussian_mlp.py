@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.autograd import Variable
 
 
@@ -29,26 +30,16 @@ class MLP:
 
         # Policy network
         # ------------------------
-        self.model = nn.Sequential()
-        self.model.add_module('fc_0', nn.Linear(self.n, hidden_sizes[0]))
-        self.model.add_module('tanh_0', nn.Tanh())
-        self.model.add_module('fc_1', nn.Linear(hidden_sizes[0], hidden_sizes[1]))
-        self.model.add_module('tanh_1', nn.Tanh())
-        self.model.add_module('fc_2', nn.Linear(hidden_sizes[1], self.m))
+        self.model = MuNet(self.n, self.m, hidden_sizes)
         # make weights small
         for param in list(self.model.parameters())[-2:]:  # only last layer
-           param.data = (1.0/hidden_sizes[1]) * param.data
+           param.data = 1e-2 * param.data
         self.log_std = Variable(torch.ones(self.m) * init_log_std, requires_grad=True)
         self.trainable_params = list(self.model.parameters()) + [self.log_std]
 
         # Old Policy network
         # ------------------------
-        self.old_model = nn.Sequential()
-        self.old_model.add_module('old_fc_0', nn.Linear(self.n, hidden_sizes[0]))
-        self.old_model.add_module('old_tanh_0', nn.Tanh())
-        self.old_model.add_module('old_fc_1', nn.Linear(hidden_sizes[0], hidden_sizes[1]))
-        self.old_model.add_module('old_tanh_1', nn.Tanh())
-        self.old_model.add_module('old_fc_2', nn.Linear(hidden_sizes[1], self.m))
+        self.old_model = MuNet(self.n, self.m, hidden_sizes)
         self.old_log_std = Variable(torch.ones(self.m) * init_log_std)
         self.old_params = list(self.old_model.parameters()) + [self.old_log_std]
         for idx, param in enumerate(self.old_params):
@@ -147,3 +138,45 @@ class MLP:
         Dr = 2 * new_std ** 2 + 1e-8
         sample_kl = torch.sum(Nr / Dr + new_log_std - old_log_std, dim=1)
         return torch.mean(sample_kl)
+
+
+class MuNet(nn.Module):
+    def __init__(self, obs_dim, act_dim, hidden_sizes=(64,64),
+                 in_shift = None,
+                 in_scale = None,
+                 out_shift = None,
+                 out_scale = None):
+        super(MuNet, self).__init__()
+
+        self.obs_dim = obs_dim
+        self.act_dim = act_dim
+        self.hidden_sizes = hidden_sizes
+        self.set_transformations(in_shift, in_scale, out_shift, out_scale)
+
+        self.fc0   = nn.Linear(obs_dim, hidden_sizes[0])
+        self.fc1   = nn.Linear(hidden_sizes[0], hidden_sizes[1])
+        self.fc2   = nn.Linear(hidden_sizes[1], act_dim)
+
+    def set_transformations(self, in_shift=None, in_scale=None, out_shift=None, out_scale=None):
+        # store native scales that can be used for resets
+        self.transformations = dict(in_shift=in_shift,
+                           in_scale=in_scale,
+                           out_shift=out_shift,
+                           out_scale=out_scale
+                          )
+        self.in_shift  = torch.from_numpy(np.float32(in_shift)) if in_shift is not None else torch.zeros(self.obs_dim)
+        self.in_scale  = torch.from_numpy(np.float32(in_scale)) if in_scale is not None else torch.ones(self.obs_dim)
+        self.out_shift = torch.from_numpy(np.float32(out_shift)) if out_shift is not None else torch.zeros(self.act_dim)
+        self.out_scale = torch.from_numpy(np.float32(out_scale)) if out_scale is not None else torch.ones(self.act_dim)
+        self.in_shift  = Variable(self.in_shift, requires_grad=False)
+        self.in_scale  = Variable(self.in_scale, requires_grad=False)
+        self.out_shift = Variable(self.out_shift, requires_grad=False)
+        self.out_scale = Variable(self.out_scale, requires_grad=False)
+
+    def forward(self, x):
+        out = (x - self.in_shift)/(self.in_scale + 1e-8)
+        out = F.tanh(self.fc0(out))
+        out = F.tanh(self.fc1(out))
+        out = self.fc2(out)
+        out = out * self.out_scale + self.out_shift
+        return out

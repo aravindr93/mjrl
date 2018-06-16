@@ -70,6 +70,7 @@ dependencies:
 - testpath=0.3.1=py35_0
 - tk=8.5.18=0
 - tornado=4.5.2=py35_0
+- tqdm
 - traitlets=4.3.2=py35_0
 - wcwidth=0.1.7=py35_0
 - wheel=0.29.0=py35_0
