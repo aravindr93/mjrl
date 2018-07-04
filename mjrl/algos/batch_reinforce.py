@@ -35,7 +35,6 @@ class BatchREINFORCE:
         if save_logs: self.logger = DataLog()
 
     def CPI_surrogate(self, observations, actions, advantages):
-        advantages = advantages / (np.max(advantages) + 1e-8)
         adv_var = Variable(torch.from_numpy(advantages).float(), requires_grad=False)
         old_dist_info = self.policy.old_dist_info(observations, actions)
         new_dist_info = self.policy.new_dist_info(observations, actions)

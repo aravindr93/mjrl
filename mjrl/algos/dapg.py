@@ -57,16 +57,16 @@ class DAPG(NPG):
         observations = np.concatenate([path["observations"] for path in paths])
         actions = np.concatenate([path["actions"] for path in paths])
         advantages = np.concatenate([path["advantages"] for path in paths])
+        advantages = (advantages - np.mean(advantages)) / (np.std(advantages) + 1e-6)
 
-        if self.demo_paths is not None:
+        if self.demo_paths is not None and self.lam_0 > 0.0:
             demo_obs = np.concatenate([path["observations"] for path in self.demo_paths])
             demo_act = np.concatenate([path["actions"] for path in self.demo_paths])
-            demo_adv = self.lam_0 * (self.lam_1 ** self.iter_count) * \
-                       np.max(advantages) * np.ones(demo_obs.shape[0])
+            demo_adv = self.lam_0 * (self.lam_1 ** self.iter_count) * np.ones(demo_obs.shape[0])
             # concatenate all
             all_obs = np.concatenate([observations, demo_obs])
             all_act = np.concatenate([actions, demo_act])
-            all_adv = np.concatenate([advantages, demo_adv])
+            all_adv = 1e-2*np.concatenate([advantages/(np.std(advantages) + 1e-8), demo_adv])
         else:
             all_obs = observations
             all_act = actions
@@ -93,7 +93,8 @@ class DAPG(NPG):
 
         # DAPG
         ts = timer.time()
-        dapg_grad = self.flat_vpg(all_obs, all_act, all_adv)
+        sample_coef = all_adv.shape[0]/advantages.shape[0]
+        dapg_grad = sample_coef*self.flat_vpg(all_obs, all_act, all_adv)
         t_gLL += timer.time() - ts
 
         # NPG
@@ -127,5 +128,9 @@ class DAPG(NPG):
             self.logger.log_kv('kl_dist', kl_dist)
             self.logger.log_kv('surr_improvement', surr_after - surr_before)
             self.logger.log_kv('running_score', self.running_score)
-
+            try:
+                success_rate = self.env.env.env.evaluate_success(paths)
+                self.logger.log_kv('success_rate', success_rate)
+            except:
+                pass
         return base_stats
