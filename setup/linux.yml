@@ -81,6 +81,7 @@ dependencies:
 - six=1.11.0=py35h423b573_1
 - sqlite=3.22.0=h1bed415_0
 - tabulate=0.7.5=py35_0
+- termcolor
 - terminado=0.8.1=py35_1
 - testpath=0.3.1=py35had42eaf_0
 - tk=8.6.7=hc745277_3
@@ -99,6 +100,7 @@ dependencies:
 - torchvision=0.2.0=py35heaa392f_1
 - pip:
   - chardet==3.0.4
+  - click
   - cycler==0.10.0
   - cython==0.27.3
   - future==0.16.0
