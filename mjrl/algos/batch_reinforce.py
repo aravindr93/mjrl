@@ -65,16 +65,16 @@ class BatchREINFORCE:
 
         # Clean up input arguments
         if env_name is None: env_name = self.env.env_id
-        if sample_mode is not 'trajectories' and sample_mode is not 'samples':
+        if sample_mode != 'trajectories' and sample_mode != 'samples':
             print("sample_mode in NPG must be either 'trajectories' or 'samples'")
             quit()
 
         ts = timer.time()
 
-        if sample_mode is 'trajectories':
+        if sample_mode == 'trajectories':
             paths = trajectory_sampler.sample_paths_parallel(N, self.policy, T, env_name,
                                                              self.seed, num_cpu)
-        elif sample_mode is 'samples':
+        elif sample_mode == 'samples':
             paths = batch_sampler.sample_paths(N, self.policy, T, env_name=env_name,
                                                pegasus_seed=self.seed, num_cpu=num_cpu)
 
