@@ -1,6 +1,6 @@
 # RL for MuJoCo
 
-This package  contains implimentations of various RL algorithms for continuous control tasks simulated with [MuJoCo.](http://www.mujoco.org/)
+This package  contains implementations of various RL algorithms for continuous control tasks simulated with [MuJoCo.](http://www.mujoco.org/)
 
 # Installation
 The main package dependencies are `python=3.5`, `gym`, `mujoco-py`, and `pytorch`. See `setup/README.md` ([link](https://github.com/aravindr93/mjrl/tree/master/setup#installation)) for detailed install instructions.
