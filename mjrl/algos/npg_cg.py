@@ -152,5 +152,10 @@ class NPG(BatchREINFORCE):
             self.logger.log_kv('kl_dist', kl_dist)
             self.logger.log_kv('surr_improvement', surr_after - surr_before)
             self.logger.log_kv('running_score', self.running_score)
+            try:
+                success_rate = self.env.env.env.evaluate_success(paths)
+                self.logger.log_kv('success_rate', success_rate)
+            except:
+                pass
 
         return base_stats
