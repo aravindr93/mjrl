@@ -50,7 +50,7 @@ def train_agent(job_name, agent,
         train_curve[i] = stats[0]
         if evaluation_rollouts is not None and evaluation_rollouts > 0:
             print("Performing evaluation rollouts ........")
-            eval_paths = sample_paths_parallel(N=10, policy=agent.policy, num_cpu=num_cpu,
+            eval_paths = sample_paths_parallel(N=evaluation_rollouts, policy=agent.policy, num_cpu=num_cpu,
                                                env_name=e.env_id, mode='evaluation')
             mean_pol_perf = np.mean([np.sum(path['rewards']) for path in eval_paths])
             if agent.save_logs:
