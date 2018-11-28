@@ -9,10 +9,9 @@ import six
 import time as timer
 
 try:
-    import mujoco_py
-    from mujoco_py import load_model_from_path, MjSim, MjViewer
+    from dm_control.mujoco import Physics
 except ImportError as e:
-    raise error.DependencyNotInstalled("{}. (HINT: you need to install mujoco_py, and also perform the setup instructions here: https://github.com/openai/mujoco-py/.)".format(e))
+    raise error.DependencyNotInstalled("{}. (HINT: Install dm_control)".format(e))
 
 class MujocoEnv(gym.Env):
     """Superclass for all MuJoCo environments.
@@ -27,8 +26,8 @@ class MujocoEnv(gym.Env):
         if not path.exists(fullpath):
             raise IOError("File %s does not exist" % fullpath)
         self.frame_skip = frame_skip
-        self.model = load_model_from_path(fullpath)
-        self.sim = MjSim(self.model)
+        self.sim = Physics.from_xml_path(fullpath)
+        self.model = self.sim.model
         self.data = self.sim.data
 
         self.metadata = {
@@ -73,7 +72,7 @@ class MujocoEnv(gym.Env):
         Due to specifics of new mujoco rendering, the standard viewer cannot be used
         with this set-up. Instead we use this mujoco specific function.
         """
-        pass
+        raise NotImplementedError
 
     def viewer_setup(self):
         """
@@ -83,21 +82,17 @@ class MujocoEnv(gym.Env):
 
     # -----------------------------
 
+    def set_state(self, qpos, qvel):
+        assert qpos.shape == (self.model.nq,) and qvel.shape == (self.model.nv,)
+        self.data.qpos[:] = qpos
+        self.data.qvel[:] = qvel
+        self.sim.forward()
+
     def _reset(self):
         self.sim.reset()
         self.sim.forward()
         ob = self.reset_model()
         return ob
-
-    def set_state(self, qpos, qvel):
-        assert qpos.shape == (self.model.nq,) and qvel.shape == (self.model.nv,)
-        state = self.sim.get_state()
-        for i in range(self.model.nq):
-            state.qpos[i] = qpos[i]
-        for i in range(self.model.nv):
-            state.qvel[i] = qvel[i]
-        self.sim.set_state(state)
-        self.sim.forward()
 
     @property
     def dt(self):
@@ -112,21 +107,10 @@ class MujocoEnv(gym.Env):
                 self.mj_render()
 
     def mj_render(self):
-        try:
-            self.viewer.render()
-        except:
-            self.mj_viewer_setup()
-            self.viewer._run_speed = 0.5
-            #self.viewer._run_speed /= self.frame_skip
-            self.viewer.render()
+        raise NotImplementedError
 
     def _get_viewer(self):
         return None
-
-    def state_vector(self):
-        state = self.sim.get_state()
-        return np.concatenate([
-            state.qpos.flat, state.qvel.flat])
 
     # -----------------------------
 
@@ -148,7 +132,7 @@ class MujocoEnv(gym.Env):
                                    mode='exploration',
                                    save_loc='/tmp/',
                                    filename='newvid',
-                                   camera_name=None):
+                                   camera_id=0):
         import skvideo.io
         for ep in range(num_episodes):
             print("Episode %d: rendering offline " % ep, end='', flush=True)
@@ -161,9 +145,8 @@ class MujocoEnv(gym.Env):
                 a = policy.get_action(o)[0] if mode == 'exploration' else policy.get_action(o)[1]['evaluation']
                 o, r, d, _ = self.step(a)
                 t = t+1
-                curr_frame = self.sim.render(width=frame_size[0], height=frame_size[1],
-                                             mode='offscreen', camera_name=camera_name, device_id=0)
-                arrs.append(curr_frame[::-1,:,:])
+                curr_frame = self.sim.render(width=frame_size[0], height=frame_size[1], camera_id=camera_id)
+                arrs.append(curr_frame)
                 print(t, end=', ', flush=True)
             file_name = save_loc + filename + str(ep) + ".mp4"
             skvideo.io.vwrite( file_name, np.asarray(arrs))

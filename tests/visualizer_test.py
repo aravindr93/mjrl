@@ -17,7 +17,7 @@ ts = timer.time()
 train_agent(job_name='vis_exp',
             agent=agent,
             seed=SEED,
-            niter=30,
+            niter=5,
             gamma=0.95,
             gae_lambda=0.97,
             num_cpu=1,
@@ -26,4 +26,5 @@ train_agent(job_name='vis_exp',
             save_freq=5,
             evaluation_rollouts=None)
 print("time taken = %f" % (timer.time()-ts))
-e.visualize_policy(policy, num_episodes=5, horizon=e.horizon, mode='evaluation')
+
+e.env.env.visualize_policy_offscreen(policy, num_episodes=5, horizon=e.horizon, mode='exploration')

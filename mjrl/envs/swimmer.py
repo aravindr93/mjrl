@@ -34,10 +34,3 @@ class SwimmerEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         self.set_state(qpos_init, self.init_qvel)
         self.sim.forward()
         return self._get_obs()
-
-    def mj_viewer_setup(self):
-        self.viewer = MjViewer(self.sim)
-        self.viewer.cam.trackbodyid = 1
-        self.viewer.cam.type = 1
-        self.sim.forward()
-        self.viewer.cam.distance = self.model.stat.extent*1.2

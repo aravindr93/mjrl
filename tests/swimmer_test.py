@@ -17,7 +17,7 @@ ts = timer.time()
 train_agent(job_name='swimmer_exp1',
             agent=agent,
             seed=SEED,
-            niter=50,
+            niter=10,
             gamma=0.995,  
             gae_lambda=0.97,
             num_cpu=1,
@@ -26,3 +26,5 @@ train_agent(job_name='swimmer_exp1',
             save_freq=5,
             evaluation_rollouts=5)
 print("time taken = %f" % (timer.time()-ts))
+
+e.env.env.visualize_policy_offscreen(policy, num_episodes=5, horizon=e.horizon, mode='exploration')

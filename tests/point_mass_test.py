@@ -26,3 +26,5 @@ train_agent(job_name='point_mass_exp1',
             save_freq=5,
             evaluation_rollouts=10)
 print("time taken = %f" % (timer.time()-ts))
+
+e.env.env.visualize_policy_offscreen(policy, num_episodes=5, horizon=e.horizon, mode='evaluation')
