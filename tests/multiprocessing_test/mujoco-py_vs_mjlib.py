@@ -27,7 +27,7 @@ def _try_multiprocess(args_list, num_cpu, max_process_time, max_timeouts, functi
     if max_timeouts == 0:
         return None
 
-    pool = mp.Pool(processes=num_cpu, maxtasksperchild=1)
+    pool = mp.Pool(processes=num_cpu, maxtasksperchild=5)
     parallel_runs = [pool.apply_async(function,
                     args=(args_list[i],)) for i in range(num_cpu)]
     try:
@@ -38,7 +38,7 @@ def _try_multiprocess(args_list, num_cpu, max_process_time, max_timeouts, functi
         pool.close()
         pool.terminate()
         pool.join()
-        return _try_multiprocess(args_list, num_cpu, max_process_time, max_timeouts-1, mode)
+        return _try_multiprocess(args_list, num_cpu, max_process_time, max_timeouts-1, function)
 
     pool.close()
     pool.terminate()
