@@ -1,4 +1,4 @@
-name: mjrl-env
+name: mjrl-dm-env
 channels:
 - pytorch
 - defaults
@@ -114,7 +114,7 @@ dependencies:
   - jupyter-core==4.4.0
   - keras==2.1.4
   - matplotlib==2.1.2
-  - mujoco-py==1.50.1.35
+  #- mujoco-py==1.50.1.35
   - prompt-toolkit==1.0.15
   - pyglet==1.3.1
   - pyparsing==2.2.0
