@@ -17,15 +17,15 @@ N_STEPS = 10000
 
 # ------------------------
 def run_parallel(target_function, args_list):
-	"""
-	Runs the target_function on multiple processes in parallel
+    """
+    Runs the target_function on multiple processes in parallel
 
     Args:
         target_function: function to be executed on multiple processes
         args_list: a list with each element being arguments to be used for target_function
 
     Returns:
-    	Output of each target_function as a list
+        Output of each target_function as a list
     """
 
     num_runs = len(args_list)
@@ -34,13 +34,13 @@ def run_parallel(target_function, args_list):
 
     workers = []
     for i in range(num_runs):
-    	proc = multiprocessing.Process(
-    			target=target_function, args=(*args_list[i],))
-    	proc.start()
-    	workers.append(proc)
+        proc = multiprocessing.Process(
+                target=target_function, args=(*args_list[i],))
+        proc.start()
+        workers.append(proc)
 
-	results = [worker.join() for worker in workers]
-	return results
+    results = [worker.join() for worker in workers]
+    return results
 # ---------------------
 
 
@@ -75,30 +75,30 @@ def rollout_mjlib(seed, horizon, thread_id):
 
 if __name__ == '__main__':
 
-	# single threaded
-	print("***************")
-	print("mujoco-py single threaded execution")
-	for i in range(N_PROCESS):
-	    rollout_mujoco_py(i, N_STEPS, i)
+    # single threaded
+    print("***************")
+    print("mujoco-py single threaded execution")
+    for i in range(N_PROCESS):
+        rollout_mujoco_py(i, N_STEPS, i)
 
-	# multiprocessing
-	print("mujoco-py multiprocessing execution")
-	args_list = []
-	for i in range(N_PROCESS):
-	    args_list_process = [i, N_STEPS, i]
-	    args_list.append(args_list_process)
-	results = run_parallel(rollout_mujoco_py, args_list)
+    # multiprocessing
+    print("mujoco-py multiprocessing execution")
+    args_list = []
+    for i in range(N_PROCESS):
+        args_list_process = [i, N_STEPS, i]
+        args_list.append(args_list_process)
+    results = run_parallel(rollout_mujoco_py, args_list)
 
-	# single threaded (mjlib)
-	print("***************")
-	print("mjlib single threaded execution")
-	for i in range(N_PROCESS):
-	    rollout_mjlib(i, N_STEPS, i)
+    # single threaded (mjlib)
+    print("***************")
+    print("mjlib single threaded execution")
+    for i in range(N_PROCESS):
+        rollout_mjlib(i, N_STEPS, i)
 
-	# multiprocessing
-	print("mjlib multiprocessing execution")
-	args_list = []
-	for i in range(N_PROCESS):
-	    args_list_process = [i, N_STEPS, i]
-	    args_list.append(args_list_process)
-	results = run_parallel(rollout_mjlib, args_list)
+    # multiprocessing
+    print("mjlib multiprocessing execution")
+    args_list = []
+    for i in range(N_PROCESS):
+        args_list_process = [i, N_STEPS, i]
+        args_list.append(args_list_process)
+    results = run_parallel(rollout_mjlib, args_list)
