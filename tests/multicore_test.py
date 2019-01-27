@@ -8,21 +8,21 @@ import mjrl.envs
 import time as timer
 SEED = 500
 
-env_name = 'mjrl_swimmer-v0'
-policy = MLP(obs_dim=12, act_dim=4, hidden_sizes=(32,32), seed=SEED)
-baseline = MLPBaseline(obs_dim=12, reg_coef=1e-3, batch_size=64, epochs=5, learn_rate=1e-3)
-agent = NPG(env_name, policy, baseline, normalized_step_size=0.1, seed=SEED, save_logs=True)
+e_name = 'mjrl_point_mass-v0'
+policy = MLP(obs_dim=6, act_dim=2, hidden_sizes=(32,32), seed=SEED)
+baseline = QuadraticBaseline(obs_dim=6)
+agent = NPG(e_name, policy, baseline, normalized_step_size=0.1, seed=SEED, save_logs=True)
 
 ts = timer.time()
-train_agent(job_name='swimmer_exp1',
+train_agent(job_name='point_mass_multicore_exp1',
             agent=agent,
             seed=SEED,
             niter=50,
-            gamma=0.995,
+            gamma=0.95,
             gae_lambda=0.97,
-            num_cpu=1,
+            num_cpu=4,
             sample_mode='trajectories',
-            num_traj=10,
+            num_traj=100,
             save_freq=5,
             evaluation_rollouts=None)
 print("time taken = %f" % (timer.time()-ts))

@@ -8,16 +8,16 @@ import mjrl.envs
 import time as timer
 SEED = 500
 
-e = GymEnv('mjrl_point_mass-v0')
-policy = MLP(e.spec, hidden_sizes=(32,32), seed=SEED)
-baseline = QuadraticBaseline(e.spec)
-agent = NPG(e, policy, baseline, normalized_step_size=0.2, seed=SEED, save_logs=True)
+e_name = 'mjrl_point_mass-v0'
+policy = MLP(obs_dim=6, act_dim=2, hidden_sizes=(32,32), seed=SEED)
+baseline = QuadraticBaseline(obs_dim=6)
+agent = NPG(e_name, policy, baseline, normalized_step_size=0.1, seed=SEED, save_logs=True)
 
 ts = timer.time()
-train_agent(job_name='vis_exp',
+train_agent(job_name='point_mass_exp1',
             agent=agent,
             seed=SEED,
-            niter=5,
+            niter=50,
             gamma=0.95,
             gae_lambda=0.97,
             num_cpu=1,
@@ -27,4 +27,5 @@ train_agent(job_name='vis_exp',
             evaluation_rollouts=None)
 print("time taken = %f" % (timer.time()-ts))
 
-e.env.env.visualize_policy_offscreen(policy, num_episodes=5, horizon=e.horizon, mode='exploration')
+e = GymEnv(e_name)
+e.env.env.visualize_policy_offscreen(policy, num_episodes=5, horizon=e.horizon, mode='evaluation')

@@ -6,11 +6,13 @@ from torch.autograd import Variable
 
 
 class MLP:
-    def __init__(self, env_spec,
+    def __init__(self, env_spec=None,
                  hidden_sizes=(64,64),
                  min_log_std=-3,
                  init_log_std=0,
-                 seed=None):
+                 seed=None,
+                 obs_dim=None,
+                 act_dim=None):
         """
         :param env_spec: specifications of the env (see utils/gym_env.py)
         :param hidden_sizes: network hidden layer sizes (currently 2 layers only)
@@ -18,8 +20,8 @@ class MLP:
         :param init_log_std: initial log standard deviation
         :param seed: random seed
         """
-        self.n = env_spec.observation_dim  # number of states
-        self.m = env_spec.action_dim  # number of actions
+        self.n = env_spec.observation_dim if obs_dim is None else obs_dim  # number of states
+        self.m = env_spec.action_dim if act_dim is None else act_dim  # number of actions
         self.min_log_std = min_log_std
 
         # Set seed

@@ -40,7 +40,8 @@ class NPG(BatchREINFORCE):
         :param seed: random seed
         """
 
-        self.env = env
+        assert (type(env) is str), "For mjlib envs, input should be name of env"
+        self.env_name = env
         self.policy = policy
         self.baseline = baseline
         self.alpha = const_learn_rate

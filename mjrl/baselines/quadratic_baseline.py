@@ -2,7 +2,7 @@ import numpy as np
 import copy
 
 class QuadraticBaseline:
-    def __init__(self, env_spec, reg_coeff=1e-5, obs_dim=None):
+    def __init__(self, env_spec=None, reg_coeff=1e-5, obs_dim=None):
         self.n = obs_dim if obs_dim is not None else env_spec.observation_dim
         self._reg_coeff = reg_coeff
         self._coeffs = None

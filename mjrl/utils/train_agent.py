@@ -36,7 +36,12 @@ def train_agent(job_name, agent,
     best_perf = -1e8
     train_curve = best_perf*np.ones(niter)
     mean_pol_perf = 0.0
-    e = GymEnv(agent.env.env_id)
+
+    # """
+    # mjlib quirk: we cannot create an env outside the processes (causes openGL lock)
+    # e = GymEnv(agent.env.env_id) 
+    # """
+    env_name = agent.env_name
 
     for i in range(niter):
         print("......................................................................................")
@@ -51,7 +56,7 @@ def train_agent(job_name, agent,
         if evaluation_rollouts is not None and evaluation_rollouts > 0:
             print("Performing evaluation rollouts ........")
             eval_paths = sample_paths_parallel(N=evaluation_rollouts, policy=agent.policy, num_cpu=num_cpu,
-                                               env_name=e.env_id, mode='evaluation', pegasus_seed=seed)
+                                               env_name=env_name, mode='evaluation', pegasus_seed=seed)
             mean_pol_perf = np.mean([np.sum(path['rewards']) for path in eval_paths])
             if agent.save_logs:
                 agent.logger.log_kv('eval_score', mean_pol_perf)

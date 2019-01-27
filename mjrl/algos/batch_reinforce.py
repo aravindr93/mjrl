@@ -25,7 +25,8 @@ class BatchREINFORCE:
                  seed=None,
                  save_logs=False):
 
-        self.env = env
+        assert (type(env) is str), "For mjlib envs, input should be name of env"
+        self.env_name = env
         self.policy = policy
         self.baseline = baseline
         self.alpha = learn_rate
@@ -64,7 +65,7 @@ class BatchREINFORCE:
                    num_cpu='max'):
 
         # Clean up input arguments
-        if env_name is None: env_name = self.env.env_id
+        if env_name is None: env_name = self.env_name
         if sample_mode != 'trajectories' and sample_mode != 'samples':
             print("sample_mode in NPG must be either 'trajectories' or 'samples'")
             quit()
