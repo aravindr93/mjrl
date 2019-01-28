@@ -11,7 +11,9 @@ import time as timer
 try:
     from dm_control.mujoco import Physics
 except ImportError as e:
-    raise error.DependencyNotInstalled("{}. (HINT: Install dm_control)".format(e))
+    raise error.DependencyNotInstalled(
+        "{}. (HINT: Install dm_control)".format(e))
+
 
 class MujocoEnv(gym.Env):
     """Superclass for all MuJoCo environments.
@@ -22,7 +24,8 @@ class MujocoEnv(gym.Env):
         if model_path.startswith("/"):
             fullpath = model_path
         else:
-            fullpath = os.path.join(os.path.dirname(__file__), "assets", model_path)
+            fullpath = os.path.join(
+                os.path.dirname(__file__), "assets", model_path)
         if not path.exists(fullpath):
             raise IOError("File %s does not exist" % fullpath)
         self.frame_skip = frame_skip
@@ -38,20 +41,29 @@ class MujocoEnv(gym.Env):
 
         self.init_qpos = self.data.qpos.ravel().copy()
         self.init_qvel = self.data.qvel.ravel().copy()
-        observation, _reward, done, _info = self._step(np.zeros(self.model.nu))
+        # gym compatibility
+        observation, _reward, done, _info = self.step(np.zeros(self.model.nu))
         assert not done
-        self.obs_dim = np.sum([o.size for o in observation]) if type(observation) is tuple else observation.size
+        self.obs_dim = np.sum([
+            o.size for o in observation
+        ]) if type(observation) is tuple else observation.size
 
         bounds = self.model.actuator_ctrlrange.copy()
         low = bounds[:, 0]
         high = bounds[:, 1]
         self.action_space = spaces.Box(low, high)
 
-        high = np.inf*np.ones(self.obs_dim)
+        high = np.inf * np.ones(self.obs_dim)
         low = -high
         self.observation_space = spaces.Box(low, high)
 
         self._seed()
+
+    def step(self, action):  # gym compatibility
+        return self._step(action)
+
+    def seed(self, seed=None):  # gym compatibility
+        return self._seed(seed=seed)
 
     def _seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -83,10 +95,14 @@ class MujocoEnv(gym.Env):
     # -----------------------------
 
     def set_state(self, qpos, qvel):
-        assert qpos.shape == (self.model.nq,) and qvel.shape == (self.model.nv,)
+        assert qpos.shape == (self.model.nq, ) and qvel.shape == (
+            self.model.nv, )
         self.data.qpos[:] = qpos
         self.data.qvel[:] = qvel
         self.sim.forward()
+
+    def reset(self):  # gym compatibility
+        return self._reset()
 
     def _reset(self):
         self.sim.reset()
@@ -114,21 +130,29 @@ class MujocoEnv(gym.Env):
 
     # -----------------------------
 
-    def visualize_policy(self, policy, horizon=1000, num_episodes=1, mode='exploration'):
+    def visualize_policy(self,
+                         policy,
+                         horizon=1000,
+                         num_episodes=1,
+                         mode='exploration'):
         self.mujoco_render_frames = True
         for ep in range(num_episodes):
             o = self.reset()
             d = False
             t = 0
             while t < horizon and d is False:
-                a = policy.get_action(o)[0] if mode == 'exploration' else policy.get_action(o)[1]['evaluation']
+                a = policy.get_action(
+                    o)[0] if mode == 'exploration' else policy.get_action(
+                        o)[1]['evaluation']
                 o, r, d, _ = self.step(a)
-                t = t+1
+                t = t + 1
         self.mujoco_render_frames = False
 
-    def visualize_policy_offscreen(self, policy, horizon=1000,
+    def visualize_policy_offscreen(self,
+                                   policy,
+                                   horizon=1000,
                                    num_episodes=1,
-                                   frame_size=(640,480),
+                                   frame_size=(640, 480),
                                    mode='exploration',
                                    save_loc='/tmp/',
                                    filename='newvid',
@@ -142,14 +166,19 @@ class MujocoEnv(gym.Env):
             arrs = []
             t0 = timer.time()
             while t < horizon and d is False:
-                a = policy.get_action(o)[0] if mode == 'exploration' else policy.get_action(o)[1]['evaluation']
+                a = policy.get_action(
+                    o)[0] if mode == 'exploration' else policy.get_action(
+                        o)[1]['evaluation']
                 o, r, d, _ = self.step(a)
-                t = t+1
-                curr_frame = self.sim.render(width=frame_size[0], height=frame_size[1], camera_id=camera_id)
+                t = t + 1
+                curr_frame = self.sim.render(
+                    width=frame_size[0],
+                    height=frame_size[1],
+                    camera_id=camera_id)
                 arrs.append(curr_frame)
                 print(t, end=', ', flush=True)
             file_name = save_loc + filename + str(ep) + ".mp4"
-            skvideo.io.vwrite( file_name, np.asarray(arrs))
+            skvideo.io.vwrite(file_name, np.asarray(arrs))
             print("saved", file_name)
             t1 = timer.time()
-            print("time taken = %f"% (t1-t0))
+            print("time taken = %f" % (t1 - t0))
