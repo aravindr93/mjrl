@@ -20,7 +20,7 @@ class PointMassEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         reward = -0.01*dist
         if dist < 0.1:
             reward += 1.0 # bonus for being very close
-        return self._get_obs(), reward, False, {}
+        return self._get_obs(), reward, False, dict(solved=1.0*(reward > 0.0))
 
     def _get_obs(self):
         agent_pos = self.data.body_xpos[self.agent_bid].ravel()
@@ -40,6 +40,21 @@ class PointMassEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         self.model.site_pos[self.target_sid][1] = goal_y
         self.sim.forward()
         return self._get_obs()
+
+    def evaluate_success(self, paths, logger=None):
+        success = 0.0
+        for p in paths:
+            if np.mean(p['env_infos']['solved'][-4:]) > 0.0:
+                success += 1.0
+        success_rate = 100.0*success/len(paths)
+        if logger is None:
+            # nowhere to log so return the value
+            return success_rate
+        else:
+            # log the success
+            # can log multiple statistics here if needed
+            logger.log_kv('success_rate', success_rate)
+            return None
 
     def mj_viewer_setup(self):
         self.viewer = MjViewer(self.sim)
