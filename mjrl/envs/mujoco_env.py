@@ -81,6 +81,12 @@ class MujocoEnv(gym.Env):
         """
         pass
 
+    def evaluate_success(self, paths, logger=None):
+        """
+        Log various success metrics calculated based on input paths into the logger
+        """
+        pass
+
     # -----------------------------
 
     def _reset(self):
