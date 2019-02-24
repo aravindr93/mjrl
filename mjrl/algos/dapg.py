@@ -63,6 +63,7 @@ class DAPG(NPG):
             demo_obs = np.concatenate([path["observations"] for path in self.demo_paths])
             demo_act = np.concatenate([path["actions"] for path in self.demo_paths])
             demo_adv = self.lam_0 * (self.lam_1 ** self.iter_count) * np.ones(demo_obs.shape[0])
+            self.iter_count += 1
             # concatenate all
             all_obs = np.concatenate([observations, demo_obs])
             all_act = np.concatenate([actions, demo_act])
