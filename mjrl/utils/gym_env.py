@@ -1,6 +1,6 @@
 import gym
 import numpy as np
-import tqdm
+from tqdm import tqdm
 
 class EnvSpec(object):
     def __init__(self, obs_dim, act_dim, horizon, num_agents):
@@ -157,7 +157,7 @@ class GymEnv(object):
             path_image_pixels = []
             t, done = 0, False
             while t < horizon and not (done and terminate_at_done):
-                image_pix = self.get_pixels(frame_size=frame_size, camera_name=camera_name, device_id=device_id)
+                image_pix = self.env.env.get_pixels(frame_size=frame_size, camera_name=camera_name, device_id=device_id)
                 img = image_pix
                 prev_img = image_pix
                 prev_prev_img = image_pix
