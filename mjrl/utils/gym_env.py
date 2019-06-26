@@ -41,11 +41,11 @@ class GymEnv(object):
 
     @property
     def observation_space(self):
-        return self._observation_space
+        return self.env.observation_space
 
     @property
     def action_space(self):
-        return self._action_space
+        return self.env.action_space
 
     @property
     def horizon(self):
@@ -61,7 +61,18 @@ class GymEnv(object):
         self.env.render()
 
     def visualize_policy(self, policy, horizon=1000, num_episodes=1, mode='exploration'):
-        self.env.env.visualize_policy(policy, horizon, num_episodes, mode)
+        try:
+            self.env.env.visualize_policy(policy, horizon, num_episodes, mode)
+        except:
+            for ep in range(num_episodes):
+                o = self.env.reset()
+                d = False
+                t = 0
+                while t < horizon and d is False:
+                    a = policy.get_action(o)[0] if mode == 'exploration' else policy.get_action(o)[1]['evaluation']
+                    o, r, d, _ = self.env.step(a)
+                    self.env.render()
+                    t = t+1
 
     def evaluate_policy(self, policy, 
                         num_episodes=5, 

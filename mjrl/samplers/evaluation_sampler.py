@@ -29,7 +29,11 @@ def do_evaluation_rollout(N,
     if env_name is None and env is None:
         print("No environment specified! Error will be raised")
     if env is None: env = get_environment(env_name)
-    if pegasus_seed is not None: env.env._seed(pegasus_seed)
+    if pegasus_seed is not None: 
+        try:
+            env.env._seed(pegasus_seed)
+        except AttributeError as e:
+            env.env.seed(pegasus_seed)
     T = min(T, env.horizon)
 
     # print("####### Worker started #######")
@@ -41,7 +45,10 @@ def do_evaluation_rollout(N,
         # Set pegasus seed if asked
         if pegasus_seed is not None:
             seed = pegasus_seed + ep
-            env.env._seed(seed)
+            try:
+                env.env._seed(seed)
+            except AttributeError as e:
+                env.env.seed(seed)
             np.random.seed(seed)
         else:
             np.random.seed()

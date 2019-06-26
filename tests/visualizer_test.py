@@ -11,13 +11,13 @@ SEED = 500
 e = GymEnv('mjrl_point_mass-v0')
 policy = MLP(e.spec, hidden_sizes=(32,32), seed=SEED)
 baseline = QuadraticBaseline(e.spec)
-agent = NPG(e, policy, baseline, normalized_step_size=0.2, seed=SEED, save_logs=True)
+agent = NPG(e, policy, baseline, normalized_step_size=0.5, seed=SEED, save_logs=True)
 
 ts = timer.time()
 train_agent(job_name='vis_exp',
             agent=agent,
             seed=SEED,
-            niter=30,
+            niter=10,
             gamma=0.95,
             gae_lambda=0.97,
             num_cpu=1,
@@ -26,4 +26,4 @@ train_agent(job_name='vis_exp',
             save_freq=5,
             evaluation_rollouts=None)
 print("time taken = %f" % (timer.time()-ts))
-e.visualize_policy(policy, num_episodes=5, horizon=e.horizon, mode='evaluation')
+e.visualize_policy(policy, num_episodes=5, horizon=e.horizon, mode='exploration')

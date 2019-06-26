@@ -126,6 +126,12 @@ class MujocoEnv(gym.Env):
             #self.viewer._run_speed /= self.frame_skip
             self.viewer.render()
 
+    def render(self, *args, **kwargs):
+        return self.mj_render()
+
+    def _render(self, *args, **kwargs):
+        return self.mj_render()
+
     def _get_viewer(self):
         return None
 
