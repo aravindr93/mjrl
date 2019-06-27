@@ -24,5 +24,6 @@ train_agent(job_name='point_mass_exp1',
             sample_mode='trajectories',
             num_traj=40,      # samples = 40*25 = 1000
             save_freq=5,
-            evaluation_rollouts=10)
+            evaluation_rollouts=10,
+            plot_keys=['stoc_pol_mean', 'running_score', 'eval_score'])
 print("time taken = %f" % (timer.time()-ts))
