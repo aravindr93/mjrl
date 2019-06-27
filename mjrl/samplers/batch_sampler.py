@@ -76,7 +76,7 @@ def sample_paths_one_core(N,
     if env_name is None and env is None:
         print("No environment specified! Error will be raised")
     if env is None: env = get_environment(env_name)
-    if pegasus_seed is not None: env.env._seed(pegasus_seed)
+    if pegasus_seed is not None: env.set_seed(pegasus_seed)
     T = min(T, env.horizon) 
 
     start_time = timer.time()
