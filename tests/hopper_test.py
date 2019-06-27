@@ -5,25 +5,26 @@ from mjrl.baselines.mlp_baseline import MLPBaseline
 from mjrl.algos.npg_cg import NPG
 from mjrl.utils.train_agent import train_agent
 import mjrl.envs
+import gym
 import time as timer
 SEED = 500
 
-e = GymEnv('mjrl_swimmer-v0')
-policy = MLP(e.spec, hidden_sizes=(32,32), seed=SEED)
-baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=64, epochs=5, learn_rate=1e-3)
-agent = NPG(e, policy, baseline, normalized_step_size=0.1, seed=SEED, save_logs=True)
+e = GymEnv('Hopper-v3')
+policy = MLP(e.spec, hidden_sizes=(32,32), seed=SEED, init_log_std=-0.5)
+baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=64, epochs=2, learn_rate=1e-3)
+agent = NPG(e, policy, baseline, normalized_step_size=0.05, seed=SEED, save_logs=True)
 
 ts = timer.time()
-train_agent(job_name='swimmer_exp1',
+train_agent(job_name='hopper_exp1',
             agent=agent,
             seed=SEED,
-            niter=50,
+            niter=100,
             gamma=0.995,
             gae_lambda=0.97,
-            num_cpu=1,
+            num_cpu=5,
             sample_mode='trajectories',
-            num_traj=10,      # samples = 10*500 = 5000
-            save_freq=5,
+            num_traj=40,
+            save_freq=10,
             evaluation_rollouts=5,
-            plot_keys=['stoc_pol_mean', 'eval_score', 'running_score'])
+            plot_keys=['stoc_pol_mean', 'eval_score', 'running_score', 'samples'])
 print("time taken = %f" % (timer.time()-ts))
