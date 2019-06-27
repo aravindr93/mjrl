@@ -60,6 +60,12 @@ class GymEnv(object):
     def render(self):
         self.env.render()
 
+    def set_seed(self, seed=123):
+        try:
+            self.env._seed(seed)
+        except AttributeError:
+            self.env.seed(seed)
+
     def visualize_policy(self, policy, horizon=1000, num_episodes=1, mode='exploration'):
         try:
             self.env.env.visualize_policy(policy, horizon, num_episodes, mode)
@@ -87,8 +93,7 @@ class GymEnv(object):
                         save_video_location=None,
                         seed=None):
 
-        if seed is not None:
-            self.env._seed(seed)
+        if seed is not None: self.set_seed(seed)
         horizon = self._horizon if horizon is None else horizon
         mean_eval, std, min_eval, max_eval = 0.0, 0.0, -1e8, -1e8
         ep_returns = np.zeros(num_episodes)
