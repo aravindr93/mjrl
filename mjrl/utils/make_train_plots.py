@@ -20,7 +20,13 @@ def make_train_plots(log = None,
     for key in keys:
         if key in log.keys():
             plt.figure(figsize=(10,6))
-            plt.plot(log[key])
+            if 'samples' in keys:
+                cum_samples = [np.sum(log['num_samples'][:i]) for i in range(len(log['num_samples']))]
+                plt.plot(cum_samples, log[key])
+                plt.xlabel('samples')
+            else:
+                plt.plot(log[key])
+                plt.xlabel('iterations')
             plt.title(key)
             plt.savefig(save_loc+'/'+key+'.png', dpi=100)
             plt.close()

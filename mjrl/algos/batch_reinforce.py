@@ -90,6 +90,10 @@ class BatchREINFORCE:
         # train from paths
         eval_statistics = self.train_from_paths(paths)
         eval_statistics.append(N)
+        # log number of samples
+        if self.save_logs:
+            num_samples = np.sum([p["rewards"].shape[0] for p in paths])
+            self.logger.log_kv('num_samples', num_samples)
         # fit baseline
         if self.save_logs:
             ts = timer.time()
