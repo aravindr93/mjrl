@@ -127,13 +127,16 @@ class MujocoEnv(gym.Env):
             self.viewer.render()
 
     def render(self, *args, **kwargs):
-        return self.mj_render()
+        pass
+        #return self.mj_render()
 
     def _render(self, *args, **kwargs):
-        return self.mj_render()
+        pass
+        #return self.mj_render()
 
     def _get_viewer(self):
-        return None
+        pass
+        #return None
 
     def state_vector(self):
         state = self.sim.get_state()
