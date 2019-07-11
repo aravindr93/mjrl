@@ -83,7 +83,7 @@ class BatchREINFORCE:
                                                              self.seed, num_cpu)
         elif sample_mode == 'samples':
             paths = batch_sampler.sample_paths(N, self.policy, T, env_name=env_name,
-                                               pegasus_seed=self.seed, num_cpu=num_cpu)
+                                               base_seed=self.seed, num_cpu=num_cpu)
 
         if self.save_logs:
             self.logger.log_kv('time_sampling', timer.time() - ts)

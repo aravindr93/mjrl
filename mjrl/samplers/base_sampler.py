@@ -1,9 +1,9 @@
 import logging
-logging.disable(logging.CRITICAL)
-
 import numpy as np
 from mjrl.utils.get_environment import get_environment
 from mjrl.utils import tensor_utils
+logging.disable(logging.CRITICAL)
+
 
 # Single core rollout to sample trajectories
 # =======================================================
@@ -12,7 +12,7 @@ def do_rollout(N,
     T=1e6,
     env=None,
     env_name=None,
-    pegasus_seed=None):
+    base_seed=None):
     """
     params:
     N               : number of trajectories
@@ -21,29 +21,28 @@ def do_rollout(N,
     env             : env object to sample from
     env_name        : name of env to be sampled from 
                       (one of env or env_name must be specified)
-    pegasus_seed    : seed for environment (numpy speed must be set externally)
+    base_seed       : seed for environment
     """
 
     if env_name is None and env is None:
         print("No environment specified! Error will be raised")
     if env is None: env = get_environment(env_name)
-    if pegasus_seed is not None: env.set_seed(pegasus_seed)
-    T = min(T, env.horizon) 
+    if base_seed is not None: env.set_seed(base_seed)
+    T = min(T, env.horizon)
 
-    #print("####### Worker started #######")
-    
     paths = []
 
     for ep in range(N):
 
-        # Set pegasus seed if asked
-        if pegasus_seed is not None:
-            seed = pegasus_seed + ep
+        # Set seed (can be different for env and numpy)
+        # Setting seed at a trajectory level ensures compatibility between different number of cores
+        if base_seed is not None:
+            seed = base_seed + ep
             env.set_seed(seed)
             np.random.seed(seed)
         else:
             np.random.seed()
-        
+
         observations=[]
         actions=[]
         rewards=[]
@@ -57,7 +56,6 @@ def do_rollout(N,
         while t < T and done != True:
             a, agent_info = policy.get_action(o)
             next_o, r, done, env_info = env.step(a)
-            #observations.append(o.ravel())
             observations.append(o)
             actions.append(a)
             rewards.append(r)
@@ -77,8 +75,7 @@ def do_rollout(N,
 
         paths.append(path)
 
-    #print("====== Worker finished ======")
-    del(env)
+    del(env) # flush RAM
     return paths
 
 def do_rollout_star(args_list):

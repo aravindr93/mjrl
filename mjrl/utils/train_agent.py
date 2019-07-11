@@ -54,7 +54,7 @@ def train_agent(job_name, agent,
         if evaluation_rollouts is not None and evaluation_rollouts > 0:
             print("Performing evaluation rollouts ........")
             eval_paths = sample_paths_parallel(N=evaluation_rollouts, policy=agent.policy, num_cpu=num_cpu,
-                                               env_name=e.env_id, mode='evaluation', pegasus_seed=seed)
+                                               env_name=e.env_id, mode='evaluation', base_seed=seed)
             mean_pol_perf = np.mean([np.sum(path['rewards']) for path in eval_paths])
             if agent.save_logs:
                 agent.logger.log_kv('eval_score', mean_pol_perf)

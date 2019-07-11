@@ -1,26 +1,27 @@
 import logging
-logging.disable(logging.CRITICAL)
-
 import numpy as np
 import copy
 import multiprocessing as mp
 import time as timer
 import mjrl.samplers.base_sampler as base_sampler
 import mjrl.samplers.evaluation_sampler as eval_sampler
+logging.disable(logging.CRITICAL)
 
-def sample_paths(N, policy, T=1e6, env=None, env_name=None, pegasus_seed=None, mode='sample'):
+
+def sample_paths(N, policy, T=1e6, env=None, env_name=None, base_seed=None, mode='sample'):
     if mode == 'sample':
-        return base_sampler.do_rollout(N, policy, T, env, env_name, pegasus_seed)
+        return base_sampler.do_rollout(N, policy, T, env, env_name, base_seed)
     elif mode == 'evaluation':
-        return eval_sampler.do_evaluation_rollout(N, policy, T, env, env_name, pegasus_seed)
+        return eval_sampler.do_evaluation_rollout(N, policy, T, env, env_name, base_seed)
     else:
         print("Mode has to be either 'sample' for training time or 'evaluation' for test time performance")
+
 
 def sample_paths_parallel(N,
     policy,
     T=1e6,
     env_name=None,
-    pegasus_seed=None,
+    base_seed=None,
     num_cpu='max',
     max_process_time=300,
     max_timeouts=4,
@@ -30,18 +31,18 @@ def sample_paths_parallel(N,
     if num_cpu == None or num_cpu == 'max':
         num_cpu = mp.cpu_count()
     elif num_cpu == 1:
-        return base_sampler.do_rollout(N, policy, T, None, env_name, pegasus_seed)
+        return base_sampler.do_rollout(N, policy, T, None, env_name, base_seed)
     else:
         num_cpu = min(mp.cpu_count(), num_cpu)
 
     paths_per_cpu = int(np.ceil(N/num_cpu))
     args_list = []
     for i in range(num_cpu):
-        if pegasus_seed is None:
-            args_list_cpu = [paths_per_cpu, policy, T, None, env_name, pegasus_seed]
+        if base_seed is None:
+            args_list_cpu = [paths_per_cpu, policy, T, None, env_name, base_seed]
         else:
             args_list_cpu = [paths_per_cpu, policy, T,
-                            None, env_name, pegasus_seed+i*paths_per_cpu]           
+                            None, env_name, base_seed+i*paths_per_cpu]
         args_list.append(args_list_cpu)
 
     # Do multiprocessing
@@ -61,6 +62,7 @@ def sample_paths_parallel(N,
         print("======= Samples Gathered  ======= | >>>> Time taken = %f " %(timer.time()-start_time) )
     
     return paths
+
 
 def _try_multiprocess(args_list, num_cpu, max_process_time, max_timeouts, mode):
     

@@ -1,10 +1,8 @@
 import logging
-
-logging.disable(logging.CRITICAL)
-
 import numpy as np
 from mjrl.utils.get_environment import get_environment
 from mjrl.utils import tensor_utils
+logging.disable(logging.CRITICAL)
 
 
 # Single core rollout to sample trajectories
@@ -14,7 +12,7 @@ def do_evaluation_rollout(N,
                           T=1e6,
                           env=None,
                           env_name=None,
-                          pegasus_seed=None):
+                          base_seed=None):
     """
     params:
     N               : number of trajectories
@@ -23,13 +21,13 @@ def do_evaluation_rollout(N,
     env             : env object to sample from
     env_name        : name of env to be sampled from
                       (one of env or env_name must be specified)
-    pegasus_seed    : seed for environment (numpy speed must be set externally)
+    base_seed       : seed for environment (numpy speed must be set externally)
     """
 
     if env_name is None and env is None:
         print("No environment specified! Error will be raised")
     if env is None: env = get_environment(env_name)
-    if pegasus_seed is not None: env.set_seed(pegasus_seed)
+    if base_seed is not None: env.set_seed(base_seed)
     T = min(T, env.horizon)
 
     # print("####### Worker started #######")
@@ -39,8 +37,8 @@ def do_evaluation_rollout(N,
     for ep in range(N):
 
         # Set pegasus seed if asked
-        if pegasus_seed is not None:
-            seed = pegasus_seed + ep
+        if base_seed is not None:
+            seed = base_seed + ep
             env.set_seed(seed)
             np.random.seed(seed)
         else:

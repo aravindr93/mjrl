@@ -1,19 +1,19 @@
 import logging
-logging.disable(logging.CRITICAL)
-
 import numpy as np
 import time as timer
 import mjrl.samplers.base_sampler as base_sampler
 import mjrl.samplers.evaluation_sampler as eval_sampler
 import mjrl.samplers.trajectory_sampler as trajectory_sampler
 from mjrl.utils.get_environment import get_environment
+logging.disable(logging.CRITICAL)
+
 
 def sample_paths(N,
     policy,
     T=1e6,
     env=None,
     env_name=None,
-    pegasus_seed=None,
+    base_seed=None,
     num_cpu='max',
     paths_per_call=5,
     mode='sample'):
@@ -25,11 +25,11 @@ def sample_paths(N,
     env             : env object to sample from
     env_name        : name of env to be sampled from 
                       (one of env or env_name must be specified)
-    pegasus_seed    : seed for environment (numpy speed must be set externally)
+    base_seed       : seed for environment (numpy speed must be set externally)
     """
 
     if num_cpu == 1:
-        return sample_paths_one_core(N, policy, T, env, env_name, pegasus_seed, mode)
+        return sample_paths_one_core(N, policy, T, env, env_name, base_seed, mode)
     else:
         start_time = timer.time()
         print("####### Gathering Samples #######")
@@ -37,14 +37,14 @@ def sample_paths(N,
         paths_so_far = 0
         paths = []
         while sampled_so_far <= N:
-            if pegasus_seed is None:
+            if base_seed is None:
                 new_paths = trajectory_sampler.sample_paths_parallel(paths_per_call,
-                            policy, T, env_name, pegasus_seed, num_cpu, suppress_print=True, mode=mode)
+                            policy, T, env_name, base_seed, num_cpu, suppress_print=True, mode=mode)
 
             else:
-                pegasus_seed += paths_so_far
+                base_seed += paths_so_far
                 new_paths = trajectory_sampler.sample_paths_parallel(paths_per_call,
-                            policy, T, env_name, pegasus_seed, num_cpu, suppress_print=True, mode=mode)
+                            policy, T, env_name, base_seed, num_cpu, suppress_print=True, mode=mode)
 
             for path in new_paths:
                 paths.append(path)
@@ -55,12 +55,13 @@ def sample_paths(N,
         print("................................. | >>>> # samples = %i # trajectories = %i " % (sampled_so_far, paths_so_far) )
         return paths
 
+
 def sample_paths_one_core(N,
     policy,
     T=1e6,
     env=None,
     env_name=None,
-    pegasus_seed=None,
+    base_seed=None,
     mode='sample'):
     """
     params:
@@ -70,13 +71,13 @@ def sample_paths_one_core(N,
     env             : env object to sample from
     env_name        : name of env to be sampled from 
                       (one of env or env_name must be specified)
-    pegasus_seed    : seed for environment (numpy speed must be set externally)
+    base_seed    : seed for environment (numpy speed must be set externally)
     """
 
     if env_name is None and env is None:
         print("No environment specified! Error will be raised")
     if env is None: env = get_environment(env_name)
-    if pegasus_seed is not None: env.set_seed(pegasus_seed)
+    if base_seed is not None: env.set_seed(base_seed)
     T = min(T, env.horizon) 
 
     start_time = timer.time()
@@ -84,7 +85,7 @@ def sample_paths_one_core(N,
     print("####### Gathering Samples #######")
     sampled_so_far = 0
     paths = []
-    seed = pegasus_seed if pegasus_seed is not None else 0
+    seed = base_seed if base_seed is not None else 0
 
     while sampled_so_far < N:
         if mode == 'sample':
