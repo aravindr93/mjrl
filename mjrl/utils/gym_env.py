@@ -57,14 +57,23 @@ class GymEnv(object):
     def horizon(self):
         return self._horizon
 
-    def reset(self):
-        return self.env.reset()
+    def reset(self, seed=None):
+        try:
+            self.env._elapsed_steps = 0
+            return self.env.env.reset_model(seed=seed)
+        except:
+            return self.env.reset()
+
+    def reset_model(self, seed=None):
+        # overloading for legacy code
+        return self.reset(seed)
 
     def step(self, action):
         return self.env.step(action)
 
     def render(self):
         try:
+            self.env.env.mujoco_render_frames = True
             self.env.env.mj_render()
         except:
             self.env.render()
@@ -74,6 +83,42 @@ class GymEnv(object):
             self.env.seed(seed)
         except AttributeError:
             self.env._seed(seed)
+
+    def get_obs(self):
+        try:
+            return self.env.env._get_obs()
+        except:
+            return self.env.env.get_obs()
+
+    def get_env_infos(self):
+        try:
+            return self.env.env.get_env_infos()
+        except:
+            raise NotImplementedError
+
+    # ===========================================
+    # Trajectory optimization related
+    # Envs should support these functions in case of trajopt
+
+    def get_env_state(self):
+        try:
+            return self.env.env.get_env_state()
+        except:
+            raise NotImplementedError
+
+    def set_env_state(self, state_dict):
+        try:
+            self.env.env.set_env_state(state_dict)
+        except:
+            raise NotImplementedError
+
+    def real_env_step(self, bool_val):
+        try:
+            self.env.env.real_step = bool_val
+        except:
+            raise NotImplementedError
+
+    # ===========================================
 
     def visualize_policy(self, policy, horizon=1000, num_episodes=1, mode='exploration'):
         try:

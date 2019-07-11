@@ -11,7 +11,7 @@ SEED = 500
 e = GymEnv('mjrl_swimmer-v0')
 policy = MLP(e.spec, hidden_sizes=(32,32), seed=SEED)
 baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=64, epochs=2, learn_rate=1e-3)
-agent = NPG(e, policy, baseline, normalized_step_size=0.05, seed=SEED, save_logs=True)
+agent = NPG(e, policy, baseline, normalized_step_size=0.1, seed=SEED, save_logs=True)
 
 ts = timer.time()
 train_agent(job_name='swimmer_exp1',
