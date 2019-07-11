@@ -41,13 +41,16 @@ def train_agent(job_name, agent,
     for i in range(niter):
         print("......................................................................................")
         print("ITERATION : %i " % i)
+
         if train_curve[i-1] > best_perf:
             best_policy = copy.deepcopy(agent.policy)
             best_perf = train_curve[i-1]
+
         N = num_traj if sample_mode == 'trajectories' else num_samples
         args = dict(N=N, sample_mode=sample_mode, gamma=gamma, gae_lambda=gae_lambda, num_cpu=num_cpu)
         stats = agent.train_step(**args)
         train_curve[i] = stats[0]
+
         if evaluation_rollouts is not None and evaluation_rollouts > 0:
             print("Performing evaluation rollouts ........")
             eval_paths = sample_paths_parallel(N=evaluation_rollouts, policy=agent.policy, num_cpu=num_cpu,
@@ -55,6 +58,7 @@ def train_agent(job_name, agent,
             mean_pol_perf = np.mean([np.sum(path['rewards']) for path in eval_paths])
             if agent.save_logs:
                 agent.logger.log_kv('eval_score', mean_pol_perf)
+
         if i % save_freq == 0 and i > 0:
             if agent.save_logs:
                 agent.logger.save_log('logs/')
@@ -64,6 +68,7 @@ def train_agent(job_name, agent,
             pickle.dump(agent.policy, open('iterations/' + policy_file, 'wb'))
             pickle.dump(agent.baseline, open('iterations/' + baseline_file, 'wb'))
             pickle.dump(best_policy, open('iterations/best_policy.pickle', 'wb'))
+
         # print results to console
         if i == 0:
             result_file = open('results.txt', 'w')

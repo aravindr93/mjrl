@@ -8,7 +8,7 @@ class SwimmerEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         mujoco_env.MujocoEnv.__init__(self, 'swimmer.xml', 5)
         utils.EzPickle.__init__(self)
 
-    def _step(self, a):
+    def step(self, a):
         xposbefore = self.data.qpos[0]
         self.do_simulation(a, self.frame_skip)
         xposafter = self.data.qpos[0]
@@ -19,10 +19,10 @@ class SwimmerEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         reward = vel_reward - ctrl_cost
         done = False
 
-        ob = self._get_obs()
-        return ob, reward, False, {}
+        ob = self.get_obs()
+        return ob, reward, done, {}
 
-    def _get_obs(self):
+    def get_obs(self):
         return np.concatenate([
             self.data.qpos.flat[2:],
             self.data.qvel.flat,
@@ -33,7 +33,7 @@ class SwimmerEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         qpos_init[2] = self.np_random.uniform(low=-np.pi, high=np.pi)
         self.set_state(qpos_init, self.init_qvel)
         self.sim.forward()
-        return self._get_obs()
+        return self.get_obs()
 
     def mj_viewer_setup(self):
         self.viewer = MjViewer(self.sim)

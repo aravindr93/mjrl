@@ -1,3 +1,8 @@
+"""
+Basic reinforce algorithm using on-policy rollouts
+Also has function to perform linesearch on KL (improves stability)
+"""
+
 import logging
 logging.disable(logging.CRITICAL)
 import numpy as np
@@ -23,6 +28,7 @@ class BatchREINFORCE:
     def __init__(self, env, policy, baseline,
                  learn_rate=0.01,
                  seed=None,
+                 desired_kl=None,
                  save_logs=False):
 
         self.env = env
@@ -32,6 +38,7 @@ class BatchREINFORCE:
         self.seed = seed
         self.save_logs = save_logs
         self.running_score = None
+        self.desired_kl = desired_kl
         if save_logs: self.logger = DataLog()
 
     def CPI_surrogate(self, observations, actions, advantages):
@@ -109,22 +116,7 @@ class BatchREINFORCE:
     # ----------------------------------------------------------
     def train_from_paths(self, paths):
 
-        # Concatenate from all the trajectories
-        observations = np.concatenate([path["observations"] for path in paths])
-        actions = np.concatenate([path["actions"] for path in paths])
-        advantages = np.concatenate([path["advantages"] for path in paths])
-        # Advantage whitening
-        advantages = (advantages - np.mean(advantages)) / (np.std(advantages) + 1e-6)
-
-        # cache return distributions for the paths
-        path_returns = [sum(p["rewards"]) for p in paths]
-        mean_return = np.mean(path_returns)
-        std_return = np.std(path_returns)
-        min_return = np.amin(path_returns)
-        max_return = np.amax(path_returns)
-        base_stats = [mean_return, std_return, min_return, max_return]
-        self.running_score = mean_return if self.running_score is None else \
-                             0.9*self.running_score + 0.1*mean_return  # approx avg of last 10 iters
+        observations, actions, advantages, base_stats, self.running_score = self.process_paths(paths)
         if self.save_logs: self.log_rollout_statistics(paths)
 
         # Keep track of times for various computations
@@ -139,10 +131,25 @@ class BatchREINFORCE:
         vpg_grad = self.flat_vpg(observations, actions, advantages)
         t_gLL += timer.time() - ts
 
-        # Policy update
-        # --------------------------
-        curr_params = self.policy.get_param_values()
-        new_params = curr_params + self.alpha * vpg_grad
+        # Policy update with linesearch
+        # ------------------------------
+        if self.desired_kl is not None:
+            max_ctr = 100
+            alpha = self.alpha
+            curr_params = self.policy.get_param_values()
+            for ctr in range(max_ctr):
+                new_params = curr_params + alpha * vpg_grad
+                self.policy.set_param_values(new_params, set_new=True, set_old=False)
+                kl_dist = self.kl_old_new(observations, actions).data.numpy().ravel()[0]
+                if kl_dist <= self.desired_kl:
+                    break
+                else:
+                    print("backtracking")
+                    alpha = alpha / 2.0
+        else:
+            curr_params = self.policy.get_param_values()
+            new_params = curr_params + self.alpha * vpg_grad
+
         self.policy.set_param_values(new_params, set_new=True, set_old=False)
         surr_after = self.CPI_surrogate(observations, actions, advantages).data.numpy().ravel()[0]
         kl_dist = self.kl_old_new(observations, actions).data.numpy().ravel()[0]
@@ -166,6 +173,29 @@ class BatchREINFORCE:
                     pass
 
         return base_stats
+
+
+    def process_paths(self, paths):
+        # Concatenate from all the trajectories
+        observations = np.concatenate([path["observations"] for path in paths])
+        actions = np.concatenate([path["actions"] for path in paths])
+        advantages = np.concatenate([path["advantages"] for path in paths])
+
+        # Advantage whitening
+        advantages = (advantages - np.mean(advantages)) / (np.std(advantages) + 1e-6)
+
+        # cache return distributions for the paths
+        path_returns = [sum(p["rewards"]) for p in paths]
+        mean_return = np.mean(path_returns)
+        std_return = np.std(path_returns)
+        min_return = np.amin(path_returns)
+        max_return = np.amax(path_returns)
+        base_stats = [mean_return, std_return, min_return, max_return]
+        running_score = mean_return if self.running_score is None else \
+                        0.9 * self.running_score + 0.1 * mean_return
+
+        return observations, actions, advantages, base_stats, running_score
+
 
     def log_rollout_statistics(self, paths):
         path_returns = [sum(p["rewards"]) for p in paths]

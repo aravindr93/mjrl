@@ -13,13 +13,14 @@ from torch.autograd import Variable
 import pickle
 
 class MLPBaseline:
-    def __init__(self, env_spec, obs_dim=None, learn_rate=1e-3, reg_coef=0.0,
+    def __init__(self, env_spec, inp_dim=None, inp='obs', learn_rate=1e-3, reg_coef=0.0,
                  batch_size=64, epochs=1, use_gpu=False):
-        self.n = obs_dim if obs_dim is not None else env_spec.observation_dim
+        self.n = inp_dim if inp_dim is not None else env_spec.observation_dim
         self.batch_size = batch_size
         self.epochs = epochs
         self.reg_coef = reg_coef
         self.use_gpu = use_gpu
+        self.inp = inp
 
         self.model = nn.Sequential()
         self.model.add_module('fc_0', nn.Linear(self.n+4, 128))
@@ -35,7 +36,10 @@ class MLPBaseline:
         self.loss_function = torch.nn.MSELoss()
 
     def _features(self, paths):
-        o = np.concatenate([path["observations"] for path in paths])
+        if self.inp == 'env_features':
+            o = np.concatenate([path["env_infos"]["env_features"][0] for path in paths])
+        else:
+            o = np.concatenate([path["observations"] for path in paths])
         o = np.clip(o, -10, 10)/10.0
         if o.ndim > 2:
             o = o.reshape(o.shape[0], -1)

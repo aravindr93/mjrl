@@ -22,13 +22,14 @@ USAGE:\n
 @click.option('--mode', type=str, help='exploration or evaluation mode for policy', default='evaluation')
 @click.option('--seed', type=int, help='seed for generating environment instances', default=123)
 @click.option('--episodes', type=int, help='number of episodes to visualize', default=10)
+
 def main(env_name, policy, mode, seed, episodes):
     e = GymEnv(env_name)
     e.set_seed(seed)
     if policy is not None:
-    	pi = pickle.load(open(policy, 'rb'))
-	else:
-		pi = MLP(e.spec, hidden_sizes=(32,32), seed=SEED, init_log_std=-0.5)
+        pi = pickle.load(open(policy, 'rb'))
+    else:
+        pi = MLP(e.spec, hidden_sizes=(32,32), seed=seed, init_log_std=-1.0)
     # render policy
     e.visualize_policy(pi, num_episodes=episodes, horizon=e.horizon, mode=mode)
 

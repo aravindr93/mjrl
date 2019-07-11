@@ -39,7 +39,7 @@ class MujocoEnv(gym.Env):
 
         self.init_qpos = self.data.qpos.ravel().copy()
         self.init_qvel = self.data.qvel.ravel().copy()
-        observation, _reward, done, _info = self._step(np.zeros(self.model.nu))
+        observation, _reward, done, _info = self.step(np.zeros(self.model.nu))
         assert not done
         self.obs_dim = np.sum([o.size for o in observation]) if type(observation) is tuple else observation.size
 
@@ -52,9 +52,9 @@ class MujocoEnv(gym.Env):
         low = -high
         self.observation_space = spaces.Box(low, high)
 
-        self._seed()
+        self.seed()
 
-    def _seed(self, seed=None):
+    def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
@@ -89,7 +89,7 @@ class MujocoEnv(gym.Env):
 
     # -----------------------------
 
-    def _reset(self):
+    def reset(self):
         self.sim.reset()
         self.sim.forward()
         ob = self.reset_model()
@@ -97,12 +97,10 @@ class MujocoEnv(gym.Env):
 
     def set_state(self, qpos, qvel):
         assert qpos.shape == (self.model.nq,) and qvel.shape == (self.model.nv,)
-        state = self.sim.get_state()
-        for i in range(self.model.nq):
-            state.qpos[i] = qpos[i]
-        for i in range(self.model.nv):
-            state.qvel[i] = qvel[i]
-        self.sim.set_state(state)
+        old_state = self.sim.get_state()
+        new_state = mujoco_py.MjSimState(old_state.time, qpos, qvel,
+                                         old_state.act, old_state.udd_state)
+        self.sim.set_state(new_state)
         self.sim.forward()
 
     @property
@@ -127,10 +125,6 @@ class MujocoEnv(gym.Env):
             self.viewer.render()
 
     def render(self, *args, **kwargs):
-        pass
-        #return self.mj_render()
-
-    def _render(self, *args, **kwargs):
         pass
         #return self.mj_render()
 

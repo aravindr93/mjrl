@@ -2,13 +2,17 @@ import numpy as np
 import copy
 
 class QuadraticBaseline:
-    def __init__(self, env_spec, reg_coeff=1e-5, obs_dim=None):
-        self.n = obs_dim if obs_dim is not None else env_spec.observation_dim
+    def __init__(self, env_spec, inp_dim=None, inp='obs', reg_coeff=1e-3):
+        self.n = inp_dim if inp_dim is not None else env_spec.observation_dim
+        self.inp = inp
         self._reg_coeff = reg_coeff
         self._coeffs = None
 
     def _features(self, paths):
-        o = np.concatenate([path["observations"] for path in paths])
+        if self.inp == 'env_features':
+            o = np.concatenate([path["env_infos"]["env_features"][0] for path in paths])
+        else:
+            o = np.concatenate([path["observations"] for path in paths])
         o = np.clip(o, -10, 10)/10.0
         if o.ndim > 2:
             o = o.reshape(o.shape[0], -1)

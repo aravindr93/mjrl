@@ -83,25 +83,7 @@ class NPG(BatchREINFORCE):
     # ----------------------------------------------------------
     def train_from_paths(self, paths):
 
-        # Concatenate from all the trajectories
-        observations = np.concatenate([path["observations"] for path in paths])
-        actions = np.concatenate([path["actions"] for path in paths])
-        advantages = np.concatenate([path["advantages"] for path in paths])
-        # Advantage whitening
-        advantages = (advantages - np.mean(advantages)) / (np.std(advantages) + 1e-6)
-        # NOTE : advantage should be zero mean in expectation
-        # normalized step size invariant to advantage scaling, 
-        # but scaling can help with least squares
-
-        # cache return distributions for the paths
-        path_returns = [sum(p["rewards"]) for p in paths]
-        mean_return = np.mean(path_returns)
-        std_return = np.std(path_returns)
-        min_return = np.amin(path_returns)
-        max_return = np.amax(path_returns)
-        base_stats = [mean_return, std_return, min_return, max_return]
-        self.running_score = mean_return if self.running_score is None else \
-                             0.9*self.running_score + 0.1*mean_return  # approx avg of last 10 iters
+        observations, actions, advantages, base_stats, self.running_score = self.process_paths(paths)
         if self.save_logs: self.log_rollout_statistics(paths)
 
         # Keep track of times for various computations
