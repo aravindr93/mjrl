@@ -23,6 +23,7 @@ class MBAC(BC):
                  optimizer = None,
                  loss_type = 'MSE',  # can be 'MLE' or 'MSE'
                  seed = 123,
+                 buffer_size = 50,   # measured in number of trajectories
                  mpc_params = None,
                  ):
 
@@ -35,6 +36,7 @@ class MBAC(BC):
                          loss_type=loss_type,
                          )
         self.expert_paths = [] if self.expert_paths is None else self.expert_paths
+        self.buffer_size = buffer_size
 
         # For the MPC policy
         self.env = GymEnv(env_name)
@@ -92,15 +94,28 @@ class MBAC(BC):
             paths.append(path)
         return paths
 
+    def add_paths_to_buffer(self, paths):
+        for path in paths:
+            self.expert_paths.append(path)
+        if len(self.expert_paths) > self.buffer_size:
+            # keep recent trajectories
+            # TODO: Also consider keeping best performing trajectories
+            self.expert_paths = self.expert_paths[-self.buffer_size:]
+        print("Buffer size : ", len(self.expert_paths))
+
+    def get_data_from_buffer(self):
+        observations = np.concatenate([path["observations"] for path in self.expert_paths])
+        expert_actions = np.concatenate([path["expert_actions"] for path in self.expert_paths])
+        data = dict(observations=observations, expert_actions=expert_actions)
+        return data
+
     def train_step(self, num_traj=10):
         # collect data using policy actions
         # fit policy to expert actions on these states
         new_paths = self.collect_paths(num_traj, mode='policy')
-        for path in new_paths:
-            self.expert_paths.append(path)
-        observations = np.concatenate([path["observations"] for path in self.expert_paths])
-        expert_actions = np.concatenate([path["expert_actions"] for path in self.expert_paths])
-        data = dict(observations=observations, expert_actions=expert_actions)
+        self.add_paths_to_buffer(new_paths)
+        data = self.get_data_from_buffer()
         self.fit(data, log_info=True)
         mean_pol_perf = np.mean([np.sum(path['rewards']) for path in new_paths])
         print("Rewards for collected trajectories = %f" % mean_pol_perf)
+        # TODO: Add logger and functionality to use train_agent util
