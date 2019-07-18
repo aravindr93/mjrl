@@ -151,11 +151,20 @@ class MuNet(nn.Module):
         self.obs_dim = obs_dim
         self.act_dim = act_dim
         self.hidden_sizes = hidden_sizes
+        self.layer_sizes = (obs_dim, ) + hidden_sizes + (act_dim, )
         self.set_transformations(in_shift, in_scale, out_shift, out_scale)
 
-        self.fc0   = nn.Linear(obs_dim, hidden_sizes[0])
-        self.fc1   = nn.Linear(hidden_sizes[0], hidden_sizes[1])
-        self.fc2   = nn.Linear(hidden_sizes[1], act_dim)
+        # hidden layers
+        self.fc_layers = nn.ModuleList([nn.Linear(self.layer_sizes[i], self.layer_sizes[i+1]) \
+                         for i in range(len(self.layer_sizes) -1)])
+        # self.fc_layers = []
+        # self.fc_layers.append(nn.Linear(obs_dim, hidden_sizes[0]))
+        # for i in range(len(hidden_sizes)-1):
+        #     self.fc_layers.append(nn.Linear(hidden_sizes[i], hidden_sizes[i+1]))
+        # self.fc_layers.append(nn.Linear(hidden_sizes[-1], act_dim))
+        # self.fc0   = nn.Linear(obs_dim, hidden_sizes[0])
+        # self.fc1   = nn.Linear(hidden_sizes[0], hidden_sizes[1])
+        # self.fc2   = nn.Linear(hidden_sizes[1], act_dim)
 
     def set_transformations(self, in_shift=None, in_scale=None, out_shift=None, out_scale=None):
         # store native scales that can be used for resets
@@ -175,8 +184,12 @@ class MuNet(nn.Module):
 
     def forward(self, x):
         out = (x - self.in_shift)/(self.in_scale + 1e-8)
-        out = F.tanh(self.fc0(out))
-        out = F.tanh(self.fc1(out))
-        out = self.fc2(out)
+        for i in range(len(self.fc_layers)-1):
+            out = self.fc_layers[i](out)
+            out = F.tanh(out)
+        out = self.fc_layers[-1](out)
+        # out = F.tanh(self.fc0(out))
+        # out = F.tanh(self.fc1(out))
+        # out = self.fc2(out)
         out = out * self.out_scale + self.out_shift
         return out
