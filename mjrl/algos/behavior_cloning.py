@@ -21,6 +21,7 @@ class BC:
                  lr = 1e-3,
                  optimizer = None,
                  loss_type = 'MLE',  # can be 'MLE' or 'MSE'
+                 save_logs = True,
                  ):
 
         self.policy = policy
@@ -29,9 +30,10 @@ class BC:
         self.mb_size = batch_size
         self.logger = DataLog()
         self.loss_type = loss_type
+        self.save_logs = save_logs
 
-        in_shift, in_scale, out_shift, out_scale = self.compute_transformations()
-        self.set_transformations(in_shift, in_scale, out_shift, out_scale)
+        # in_shift, in_scale, out_shift, out_scale = self.compute_transformations()
+        # self.set_transformations(in_shift, in_scale, out_shift, out_scale)
 
         # construct optimizer
         self.optimizer = torch.optim.Adam(self.policy.trainable_params, lr=lr) if optimizer is None else optimizer
@@ -39,6 +41,10 @@ class BC:
         # Loss criterion if required
         if loss_type == 'MSE':
             self.loss_criterion = torch.nn.MSELoss()
+
+        # make logger
+        if self.save_logs:
+            self.logger = DataLog()
 
     def compute_transformations(self):
         # get transformations
@@ -90,19 +96,21 @@ class BC:
         act_pi = self.policy.model(obs)
         return self.loss_criterion(act_pi, act_expert.detach())
 
-    def fit(self, data, log_info=True):
+    def fit(self, data, suppress_fit_tqdm=False, **kwargs):
         # data is a dict
         # keys should have "observations" and "expert_actions"
         validate_keys = all([k in data.keys() for k in ["observations", "expert_actions"]])
         assert validate_keys is True
         ts = timer.time()
         num_samples = data["observations"].shape[0]
-        for ep in tqdm(range(self.epochs)):
-            if log_info is True:
-                self.logger.log_kv('epoch', ep)
-                loss_val = self.loss(data, idx=range(num_samples)).data.numpy().ravel()[0]
-                self.logger.log_kv('loss', loss_val)
-                self.logger.log_kv('time', (timer.time()-ts))
+
+        # log stats before
+        if self.save_logs:
+            loss_val = self.loss(data, idx=range(num_samples)).data.numpy().ravel()[0]
+            self.logger.log_kv('loss_before', loss_val)
+
+        # train loop
+        for ep in config_tqdm(range(self.epochs), suppress_fit_tqdm):
             for mb in range(int(num_samples / self.mb_size)):
                 rand_idx = np.random.choice(num_samples, size=self.mb_size)
                 self.optimizer.zero_grad()
@@ -111,14 +119,23 @@ class BC:
                 self.optimizer.step()
         params_after_opt = self.policy.get_param_values()
         self.policy.set_param_values(params_after_opt, set_new=True, set_old=True)
-        if log_info is True:
+
+        # log stats after
+        if self.save_logs:
             self.logger.log_kv('epoch', self.epochs)
             loss_val = self.loss(data, idx=range(num_samples)).data.numpy().ravel()[0]
-            self.logger.log_kv('loss', loss_val)
+            self.logger.log_kv('loss_after', loss_val)
             self.logger.log_kv('time', (timer.time()-ts))
 
-    def train(self):
+    def train(self, **kwargs):
         observations = np.concatenate([path["observations"] for path in self.expert_paths])
         expert_actions = np.concatenate([path["actions"] for path in self.expert_paths])
         data = dict(observations=observations, expert_actions=expert_actions)
-        self.fit(data, log_info=True)
+        self.fit(data, **kwargs)
+
+
+def config_tqdm(range_inp, suppress_tqdm=True):
+    if suppress_tqdm:
+        return range_inp
+    else:
+        return tqdm(range_inp)

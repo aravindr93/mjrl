@@ -25,6 +25,7 @@ class MBAC(BC):
                  seed = 123,
                  buffer_size = 50,   # measured in number of trajectories
                  mpc_params = None,
+                 save_logs = True,
                  ):
 
         super().__init__(expert_paths=expert_paths,
@@ -34,6 +35,7 @@ class MBAC(BC):
                          lr=lr,
                          optimizer=optimizer,
                          loss_type=loss_type,
+                         save_logs=save_logs,
                          )
         self.expert_paths = [] if self.expert_paths is None else self.expert_paths
         self.buffer_size = buffer_size
@@ -101,7 +103,8 @@ class MBAC(BC):
             # keep recent trajectories
             # TODO: Also consider keeping best performing trajectories
             self.expert_paths = self.expert_paths[-self.buffer_size:]
-        print("Buffer size : ", len(self.expert_paths))
+        if self.save_logs:
+            self.logger.log_kv('buffer_size', len(self.expert_paths))
 
     def get_data_from_buffer(self):
         observations = np.concatenate([path["observations"] for path in self.expert_paths])
@@ -109,13 +112,12 @@ class MBAC(BC):
         data = dict(observations=observations, expert_actions=expert_actions)
         return data
 
-    def train_step(self, num_traj=10):
+    def train_step(self, num_traj=10, **kwargs):
         # collect data using policy actions
         # fit policy to expert actions on these states
         new_paths = self.collect_paths(num_traj, mode='policy')
         self.add_paths_to_buffer(new_paths)
         data = self.get_data_from_buffer()
-        self.fit(data, log_info=True)
-        mean_pol_perf = np.mean([np.sum(path['rewards']) for path in new_paths])
-        print("Rewards for collected trajectories = %f" % mean_pol_perf)
-        # TODO: Add logger and functionality to use train_agent util
+        self.fit(data, **kwargs)
+        stoc_pol_perf = np.mean([np.sum(path['rewards']) for path in new_paths])
+        return stoc_pol_perf
