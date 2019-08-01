@@ -109,6 +109,8 @@ class MBAC(BC):
     def get_data_from_buffer(self):
         observations = np.concatenate([path["observations"] for path in self.expert_paths])
         expert_actions = np.concatenate([path["expert_actions"] for path in self.expert_paths])
+        observations = torch.Tensor(observations).float()
+        expert_actions = torch.Tensor(expert_actions).float()
         data = dict(observations=observations, expert_actions=expert_actions)
         return data
 
