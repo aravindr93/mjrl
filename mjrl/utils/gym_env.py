@@ -94,7 +94,7 @@ class GymEnv(object):
         try:
             return self.env.env.get_env_infos()
         except:
-            raise NotImplementedError
+            return {}
 
     # ===========================================
     # Trajectory optimization related
