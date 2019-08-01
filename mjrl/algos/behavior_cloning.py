@@ -22,6 +22,7 @@ class BC:
                  optimizer = None,
                  loss_type = 'MLE',  # can be 'MLE' or 'MSE'
                  save_logs = True,
+                 transforms = False,
                  ):
 
         self.policy = policy
@@ -32,8 +33,9 @@ class BC:
         self.loss_type = loss_type
         self.save_logs = save_logs
 
-        # in_shift, in_scale, out_shift, out_scale = self.compute_transformations()
-        # self.set_transformations(in_shift, in_scale, out_shift, out_scale)
+        if transforms:
+            in_shift, in_scale, out_shift, out_scale = self.compute_transformations()
+            self.set_transformations(in_shift, in_scale, out_shift=out_shift, out_scale=out_scale)
 
         # construct optimizer
         self.optimizer = torch.optim.Adam(self.policy.trainable_params, lr=lr) if optimizer is None else optimizer
@@ -81,6 +83,8 @@ class BC:
         # use indices if provided (e.g. for mini-batching)
         # otherwise, use all the data
         idx = range(data['observations'].shape[0]) if idx is None else idx
+        if type(data['observations']) == torch.Tensor:
+            idx = torch.LongTensor(idx)
         obs = data['observations'][idx]
         act = data['expert_actions'][idx]
         LL, mu, log_std = self.policy.new_dist_info(obs, act)
@@ -89,10 +93,13 @@ class BC:
 
     def mse_loss(self, data, idx=None):
         idx = range(data['observations'].shape[0]) if idx is None else idx
+        if type(data['observations']) is torch.Tensor:
+            idx = torch.LongTensor(idx)
         obs = data['observations'][idx]
-        obs = Variable(torch.from_numpy(obs).float(), requires_grad=False)
         act_expert = data['expert_actions'][idx]
-        act_expert = Variable(torch.from_numpy(act_expert).float(), requires_grad=False)
+        if type(data['observations']) is not torch.Tensor:
+            obs = Variable(torch.from_numpy(obs).float(), requires_grad=False)
+            act_expert = Variable(torch.from_numpy(act_expert).float(), requires_grad=False)
         act_pi = self.policy.model(obs)
         return self.loss_criterion(act_pi, act_expert.detach())
 

@@ -100,8 +100,14 @@ class MLP:
     def mean_LL(self, observations, actions, model=None, log_std=None):
         model = self.model if model is None else model
         log_std = self.log_std if log_std is None else log_std
-        obs_var = Variable(torch.from_numpy(observations).float(), requires_grad=False)
-        act_var = Variable(torch.from_numpy(actions).float(), requires_grad=False)
+        if type(observations) is not torch.Tensor:
+            obs_var = Variable(torch.from_numpy(observations).float(), requires_grad=False)
+        else:
+            obs_var = observations
+        if type(actions) is not torch.Tensor:
+            act_var = Variable(torch.from_numpy(actions).float(), requires_grad=False)
+        else:
+            act_var = actions
         mean = model(obs_var)
         zs = (act_var - mean) / torch.exp(log_std)
         LL = - 0.5 * torch.sum(zs ** 2, dim=1) + \

@@ -29,7 +29,9 @@ class NPG(BatchREINFORCE):
                  hvp_sample_frac=1.0,
                  seed=None,
                  save_logs=False,
-                 kl_dist=None):
+                 kl_dist=None,
+                 input_normalization=None,
+                 ):
         """
         All inputs are expected in mjrl's format unless specified
         :param normalized_step_size: Normalized step size (under the KL metric). Twice the desired KL distance
@@ -51,6 +53,11 @@ class NPG(BatchREINFORCE):
         self.hvp_subsample = hvp_sample_frac
         self.running_score = None
         if save_logs: self.logger = DataLog()
+        # input normalization (running average)
+        self.input_normalization = input_normalization
+        if self.input_normalization is not None:
+            if self.input_normalization > 1 or self.input_normalization <= 0:
+                self.input_normalization = None
 
     def HVP(self, observations, actions, vector, regu_coef=None):
         regu_coef = self.FIM_invert_args['damping'] if regu_coef is None else regu_coef
@@ -89,6 +96,15 @@ class NPG(BatchREINFORCE):
         # Keep track of times for various computations
         t_gLL = 0.0
         t_FIM = 0.0
+
+        # normalize inputs if necessary
+        if self.input_normalization:
+            data_in_shift, data_in_scale = np.mean(observations, axis=0), np.std(observations, axis=0)
+            pi_in_shift, pi_in_scale = self.policy.model.in_shift.data.numpy(), self.policy.model.in_scale.data.numpy()
+            pi_out_shift, pi_out_scale = self.policy.model.out_shift.data.numpy(), self.policy.model.out_scale.data.numpy()
+            pi_in_shift = self.input_normalization * pi_in_shift + (1-self.input_normalization) * data_in_shift
+            pi_in_scale = self.input_normalization * pi_in_scale + (1-self.input_normalization) * data_in_scale
+            self.policy.model.set_transformations(pi_in_shift, pi_in_scale, pi_out_shift, pi_out_scale)
 
         # Optimization algorithm
         # --------------------------
