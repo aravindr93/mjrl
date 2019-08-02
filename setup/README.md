@@ -61,4 +61,8 @@ $ sudo apt-get install libgl1-mesa-dev libgl1-mesa-glx libglew-dev libosmesa6-de
 $ conda env update -n mjrl-env -f setup/[mac,linux].yml
 ```
 
+<<<<<<< HEAD
 - GCC error in Mac OS: If you get a GCC error from mujoco-py, you can get the correct version mujoco-py expects with `brew install gcc --without-multilib`. This may require uninstalling other versions of GCC that may have been previously installed with `brew remove gcc@6` for example. You can see which brew packages were already installed with `brew list`.
+=======
+- GCC error in Mac OS: If you get a GCC error from `mujoco-py`, it means you likely need to change the default GCC version in your machine. Assuming you have Homebrew installed (https://brew.sh/), you can install the correct GCC version with the command `brew install gcc --without-multilib`. This may require uninstalling other versions of GCC that may have been previously installed with `brew remove gcc@6` for example. You can see which brew packages were already installed with `brew list`.
+>>>>>>> ba0d64689a96c00fcd07b2116f5512dc3255aec8
