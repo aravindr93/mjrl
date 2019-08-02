@@ -39,7 +39,10 @@ class MujocoEnv(gym.Env):
 
         self.init_qpos = self.data.qpos.ravel().copy()
         self.init_qvel = self.data.qvel.ravel().copy()
-        observation, _reward, done, _info = self.step(np.zeros(self.model.nu))
+        try:
+            observation, _reward, done, _info = self.step(np.zeros(self.model.nu))
+        except:
+            observation, _reward, done, _info = self._step(np.zeros(self.model.nu))
         assert not done
         self.obs_dim = np.sum([o.size for o in observation]) if type(observation) is tuple else observation.size
 

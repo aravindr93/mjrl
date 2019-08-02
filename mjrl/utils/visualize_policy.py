@@ -7,6 +7,7 @@ import numpy as np
 import pickle
 from mjrl.utils.gym_env import GymEnv
 from mjrl.policies.gaussian_mlp import MLP
+import trajopt.envs
 
 DESC = '''
 Helper script to visualize policy (in mjrl format).\n
@@ -35,3 +36,4 @@ def main(env_name, policy, mode, seed, episodes):
 
 if __name__ == '__main__':
     main()
+
