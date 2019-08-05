@@ -7,7 +7,6 @@ logging.disable(logging.CRITICAL)
 import numpy as np
 import time as timer
 import torch
-import torch.nn as nn
 from torch.autograd import Variable
 from mjrl.utils.logger import DataLog
 from tqdm import tqdm

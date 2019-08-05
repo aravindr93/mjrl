@@ -5,7 +5,7 @@ from mjrl.baselines.mlp_baseline import MLPBaseline
 from mjrl.algos.npg_cg import NPG
 from mjrl.algos.behavior_cloning import BC
 from mjrl.utils.train_agent import train_agent
-from mjrl.samplers.trajectory_sampler import sample_paths
+from mjrl.samplers.core import sample_paths
 import mjrl.envs
 import time as timer
 import pickle
@@ -45,12 +45,12 @@ print("========================================")
 print("Collecting expert demonstrations")
 print("========================================")
 expert_pol = pickle.load(open('swimmer_exp1/iterations/best_policy.pickle', 'rb'))
-demo_paths = sample_paths(N=5, policy=expert_pol, env_name=e.env_id)
+demo_paths = sample_paths(num_traj=5, policy=expert_pol, env=e.env_id)
 
 # ------------------------------
 # Train BC
 policy = MLP(e.spec, hidden_sizes=(32,32), seed=SEED)
-bc_agent = BC(demo_paths, policy=policy, epochs=20, batch_size=16, lr=1e-4) # will use Adam by default
+bc_agent = BC(demo_paths, policy=policy, epochs=20, batch_size=64, lr=1e-3) # will use Adam by default
 ts = timer.time()
 print("========================================")
 print("Running BC with expert demonstrations")
@@ -63,7 +63,7 @@ print("========================================")
 
 # ------------------------------
 # Evaluate Policies
-bc_pol_score = e.evaluate_policy(policy, num_episodes=25, mean_action=True)
-expert_score = e.evaluate_policy(expert_pol, num_episodes=25, mean_action=True)
+bc_pol_score = e.evaluate_policy(policy, num_episodes=5, mean_action=True)
+expert_score = e.evaluate_policy(expert_pol, num_episodes=5, mean_action=True)
 print("Expert policy performance (eval mode) = %f" % expert_score[0][0])
 print("BC policy performance (eval mode) = %f" % bc_pol_score[0][0])

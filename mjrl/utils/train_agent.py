@@ -4,7 +4,7 @@ logging.disable(logging.CRITICAL)
 from tabulate import tabulate
 from mjrl.utils.make_train_plots import make_train_plots
 from mjrl.utils.gym_env import GymEnv
-from mjrl.samplers.trajectory_sampler import sample_paths_parallel
+from mjrl.samplers.core import sample_paths
 import numpy as np
 import pickle
 import time as timer
@@ -53,8 +53,8 @@ def train_agent(job_name, agent,
 
         if evaluation_rollouts is not None and evaluation_rollouts > 0:
             print("Performing evaluation rollouts ........")
-            eval_paths = sample_paths_parallel(N=evaluation_rollouts, policy=agent.policy, num_cpu=num_cpu,
-                                               env_name=e.env_id, mode='evaluation', base_seed=seed)
+            eval_paths = sample_paths(num_traj=evaluation_rollouts, policy=agent.policy, num_cpu=num_cpu,
+                                      env=e.env_id, eval_mode=True, base_seed=seed)
             mean_pol_perf = np.mean([np.sum(path['rewards']) for path in eval_paths])
             if agent.save_logs:
                 agent.logger.log_kv('eval_score', mean_pol_perf)

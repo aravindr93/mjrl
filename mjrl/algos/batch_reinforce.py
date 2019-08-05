@@ -6,18 +6,12 @@ Also has function to perform linesearch on KL (improves stability)
 import logging
 logging.disable(logging.CRITICAL)
 import numpy as np
-import scipy as sp
-import scipy.sparse.linalg as spLA
-import copy
 import time as timer
 import torch
-import torch.nn as nn
 from torch.autograd import Variable
-import copy
 
 # samplers
-import mjrl.samplers.trajectory_sampler as trajectory_sampler
-import mjrl.samplers.batch_sampler as batch_sampler
+import mjrl.samplers.core as trajectory_sampler
 
 # utility functions
 import mjrl.utils.process_samples as process_samples
@@ -63,15 +57,16 @@ class BatchREINFORCE:
 
     # ----------------------------------------------------------
     def train_step(self, N,
+                   env=None,
                    sample_mode='trajectories',
-                   env_name=None,
-                   T=1e6,
+                   horizon=1e6,
                    gamma=0.995,
-                   gae_lambda=0.98,
-                   num_cpu='max'):
+                   gae_lambda=0.97,
+                   num_cpu='max',
+                   ):
 
         # Clean up input arguments
-        if env_name is None: env_name = self.env.env_id
+        env = self.env.env_id if env is None else env
         if sample_mode != 'trajectories' and sample_mode != 'samples':
             print("sample_mode in NPG must be either 'trajectories' or 'samples'")
             quit()
@@ -79,11 +74,13 @@ class BatchREINFORCE:
         ts = timer.time()
 
         if sample_mode == 'trajectories':
-            paths = trajectory_sampler.sample_paths_parallel(N, self.policy, T, env_name,
-                                                             self.seed, num_cpu)
+            input_dict = dict(num_traj=N, env=env, policy=self.policy, horizon=horizon,
+                              base_seed=self.seed, num_cpu=num_cpu)
+            paths = trajectory_sampler.sample_paths(**input_dict)
         elif sample_mode == 'samples':
-            paths = batch_sampler.sample_paths(N, self.policy, T, env_name=env_name,
-                                               base_seed=self.seed, num_cpu=num_cpu)
+            input_dict = dict(num_samples=N, env=env, policy=self.policy, horizon=horizon,
+                              base_seed=self.seed, num_cpu=num_cpu)
+            paths = trajectory_sampler.sample_data_batch(**input_dict)
 
         if self.save_logs:
             self.logger.log_kv('time_sampling', timer.time() - ts)

@@ -133,3 +133,45 @@ class GymEnv(object):
                     o, r, d, _ = self.step(a)
                     self.render()
                     t = t+1
+
+    def evaluate_policy(self, policy,
+                        num_episodes=5,
+                        horizon=None,
+                        gamma=1,
+                        visual=False,
+                        percentile=[],
+                        get_full_dist=False,
+                        mean_action=False,
+                        init_env_state=None,
+                        terminate_at_done=True,
+                        seed=123):
+
+        self.set_seed(seed)
+        horizon = self._horizon if horizon is None else horizon
+        mean_eval, std, min_eval, max_eval = 0.0, 0.0, -1e8, -1e8
+        ep_returns = np.zeros(num_episodes)
+
+        for ep in range(num_episodes):
+            self.reset()
+            if init_env_state is not None:
+                self.set_env_state(init_env_state)
+            t, done = 0, False
+            while t < horizon and (done == False or terminate_at_done == False):
+                self.render() if visual is True else None
+                o = self.get_obs()
+                a = policy.get_action(o)[1]['evaluation'] if mean_action is True else policy.get_action(o)[0]
+                o, r, done, _ = self.step(a)
+                ep_returns[ep] += (gamma ** t) * r
+                t += 1
+
+        mean_eval, std = np.mean(ep_returns), np.std(ep_returns)
+        min_eval, max_eval = np.amin(ep_returns), np.amax(ep_returns)
+        base_stats = [mean_eval, std, min_eval, max_eval]
+
+        percentile_stats = []
+        for p in percentile:
+            percentile_stats.append(np.percentile(ep_returns, p))
+
+        full_dist = ep_returns if get_full_dist is True else None
+
+        return [base_stats, percentile_stats, full_dist]
