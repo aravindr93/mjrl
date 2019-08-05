@@ -9,6 +9,7 @@ import copy
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+from mjrl.utils.optimize_model import fit_data
 
 import pickle
 
@@ -84,20 +85,8 @@ class MLPBaseline:
             errors = returns.ravel() - predictions
             error_before = np.sum(errors**2)/(np.sum(returns**2) + 1e-8)
 
-        for ep in range(self.epochs):
-            rand_idx = np.random.permutation(num_samples)
-            for mb in range(int(num_samples / self.batch_size) - 1):
-                if self.use_gpu:
-                    data_idx = torch.LongTensor(rand_idx[mb*self.batch_size:(mb+1)*self.batch_size]).cuda()
-                else:
-                    data_idx = torch.LongTensor(rand_idx[mb*self.batch_size:(mb+1)*self.batch_size])
-                batch_x = featmat_var[data_idx]
-                batch_y = returns_var[data_idx]
-                self.optimizer.zero_grad()
-                yhat = self.model(batch_x)
-                loss = self.loss_function(yhat, batch_y)
-                loss.backward()
-                self.optimizer.step()
+        epoch_losses = fit_data(self.model, featmat_var, returns_var, self.optimizer,
+                                self.loss_function, self.batch_size, self.epochs)
 
         if return_errors:
             if self.use_gpu:
