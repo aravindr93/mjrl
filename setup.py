@@ -17,6 +17,6 @@ setup(
     packages=find_packages(),
     description='RL algorithms for environments in MuJoCo',
     long_description=read('README.md'),
-    url='https://github.com/MovementControl/mjrl.git',
+    url='https://github.com/aravindr93/mjrl.git',
     author='Aravind Rajeswaran',
 )

@@ -21,7 +21,7 @@ from mjrl.utils.logger import DataLog
 class BatchREINFORCE:
     def __init__(self, env, policy, baseline,
                  learn_rate=0.01,
-                 seed=None,
+                 seed=123,
                  desired_kl=None,
                  save_logs=False):
 
@@ -63,6 +63,7 @@ class BatchREINFORCE:
                    gamma=0.995,
                    gae_lambda=0.97,
                    num_cpu='max',
+                   env_kwargs=None,
                    ):
 
         # Clean up input arguments
@@ -75,11 +76,11 @@ class BatchREINFORCE:
 
         if sample_mode == 'trajectories':
             input_dict = dict(num_traj=N, env=env, policy=self.policy, horizon=horizon,
-                              base_seed=self.seed, num_cpu=num_cpu)
+                              base_seed=self.seed, num_cpu=num_cpu, env_kwargs=env_kwargs)
             paths = trajectory_sampler.sample_paths(**input_dict)
         elif sample_mode == 'samples':
             input_dict = dict(num_samples=N, env=env, policy=self.policy, horizon=horizon,
-                              base_seed=self.seed, num_cpu=num_cpu)
+                              base_seed=self.seed, num_cpu=num_cpu, env_kwargs=env_kwargs)
             paths = trajectory_sampler.sample_data_batch(**input_dict)
 
         if self.save_logs:

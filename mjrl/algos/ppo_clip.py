@@ -26,7 +26,7 @@ class PPO(BatchREINFORCE):
                  epochs = 10,
                  mb_size = 64,
                  learn_rate = 3e-4,
-                 seed = 0,
+                 seed = 123,
                  save_logs = False):
 
         self.env = env

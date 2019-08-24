@@ -28,7 +28,7 @@ class DAPG(NPG):
                  normalized_step_size=0.01,
                  FIM_invert_args={'iters': 10, 'damping': 1e-4},
                  hvp_sample_frac=1.0,
-                 seed=None,
+                 seed=123,
                  save_logs=False,
                  kl_dist=None,
                  lam_0=1.0,  # demo coef

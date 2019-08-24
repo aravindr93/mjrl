@@ -17,6 +17,7 @@ def do_rollout(
         eval_mode = False,
         horizon = 1e6,
         base_seed = None,
+        env_kwargs=None,
 ):
     """
     :param num_traj:    number of trajectories (int)
@@ -24,7 +25,8 @@ def do_rollout(
     :param policy:      policy to use for action selection
     :param eval_mode:   use evaluation mode for action computation (bool)
     :param horizon:     max horizon length for rollout (<= env.horizon)
-    :param base_seed:  base seed for rollouts (int)
+    :param base_seed:   base seed for rollouts (int)
+    :param env_kwargs:  dictionary with parameters, will be passed to env generator
     :return:
     """
 
@@ -34,7 +36,7 @@ def do_rollout(
     elif isinstance(env, GymEnv):
         env = env
     elif callable(env):
-        env = env()
+        env = env(**env_kwargs)
     else:
         print("Unsupported environment format")
         raise AttributeError
@@ -68,7 +70,10 @@ def do_rollout(
             a, agent_info = policy.get_action(o)
             if eval_mode:
                 a = agent_info['evaluation']
-            next_o, r, done, env_info = env.step(a)
+            env_info_base = env.get_env_infos()
+            next_o, r, done, env_info_step = env.step(a)
+            # below is important to ensure correct env_infos for the timestep
+            env_info = env_info_step if env_info_base == {} else env_info_base
             observations.append(o)
             actions.append(a)
             rewards.append(r)
@@ -102,6 +107,7 @@ def sample_paths(
         max_process_time=300,
         max_timeouts=4,
         suppress_print=False,
+        env_kwargs=None,
         ):
 
     num_cpu = 1 if num_cpu is None else num_cpu
@@ -110,7 +116,8 @@ def sample_paths(
 
     if num_cpu == 1:
         input_dict = dict(num_traj=num_traj, env=env, policy=policy,
-                          eval_mode=eval_mode, horizon=horizon, base_seed=base_seed)
+                          eval_mode=eval_mode, horizon=horizon, base_seed=base_seed,
+                          env_kwargs=env_kwargs)
         # dont invoke multiprocessing if not necessary
         return do_rollout(**input_dict)
 
@@ -120,7 +127,8 @@ def sample_paths(
     for i in range(num_cpu):
         input_dict = dict(num_traj=paths_per_cpu, env=env, policy=policy,
                           eval_mode=eval_mode, horizon=horizon,
-                          base_seed=base_seed + i * paths_per_cpu)
+                          base_seed=base_seed + i * paths_per_cpu,
+                          env_kwargs=env_kwargs)
         input_dict_list.append(input_dict)
     if suppress_print is False:
         start_time = timer.time()
@@ -149,6 +157,7 @@ def sample_data_batch(
         base_seed = None,
         num_cpu = 1,
         paths_per_call = 2,
+        env_kwargs=None,
         ):
 
     num_cpu = 1 if num_cpu is None else num_cpu
@@ -165,7 +174,7 @@ def sample_data_batch(
         base_seed = base_seed + 12345
         new_paths = sample_paths(paths_per_call * num_cpu, env, policy,
                                  eval_mode, horizon, base_seed, num_cpu,
-                                 suppress_print=True)
+                                 suppress_print=True, env_kwargs=env_kwargs)
         for path in new_paths:
             paths.append(path)
         paths_so_far += len(new_paths)
