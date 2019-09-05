@@ -205,3 +205,10 @@ class BatchREINFORCE:
         self.logger.log_kv('stoc_pol_std', std_return)
         self.logger.log_kv('stoc_pol_max', max_return)
         self.logger.log_kv('stoc_pol_min', min_return)
+
+    @property
+    def global_status(self):
+        return dict()
+
+    def load_global_status(self, status_dict):
+        pass
