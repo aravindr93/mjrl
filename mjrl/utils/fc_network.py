@@ -37,7 +37,13 @@ class FCNetwork(nn.Module):
         self.out_scale = torch.from_numpy(np.float32(out_scale)) if out_scale is not None else torch.ones(self.act_dim)
 
     def forward(self, x):
-        out = (x - self.in_shift)/(self.in_scale + 1e-8)
+        # TODO(Aravind): Remove clamping to CPU
+        # This is a temp change that should be fixed shortly
+        if x.is_cuda:
+            out = x.to('cpu')
+        else:
+            out = x
+        out = (out - self.in_shift)/(self.in_scale + 1e-8)
         for i in range(len(self.fc_layers)-1):
             out = self.fc_layers[i](out)
             out = self.nonlinearity(out)
