@@ -82,13 +82,19 @@ def do_rollout(
             o = next_o
             t += 1
 
+        is_terminal = np.zeros(len(observations))
+        is_terminal[-1] = 1.0
         path = dict(
             observations=np.array(observations),
             actions=np.array(actions),
             rewards=np.array(rewards),
+            # agent_infos_list=agent_infos,
             agent_infos=tensor_utils.stack_tensor_dict_list(agent_infos),
+            # env_infos_list=env_infos,
             env_infos=tensor_utils.stack_tensor_dict_list(env_infos),
-            terminated=done
+            terminated=done,
+            is_terminal=is_terminal,
+            time=np.arange(len(observations)),
         )
         paths.append(path)
 
