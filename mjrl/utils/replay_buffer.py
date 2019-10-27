@@ -11,6 +11,10 @@ class TrajectoryReplayBuffer:
         self.buffer = dict()
         self.device = device
 
+    def push_many(self, paths):
+        for path in paths:
+            self.push(path)
+
     def push(self, path):
         if self.max_paths != -1:
             while len(self.data_buffer) >= self.max_paths:
