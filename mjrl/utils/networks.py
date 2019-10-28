@@ -196,6 +196,7 @@ class QPi:
 
     def update_network(self):
         # make fit part of class
+        pass
 
 
 def fit_model(nn_model, input_list, target, optimizer,

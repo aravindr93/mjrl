@@ -94,7 +94,18 @@ class MLP:
         mean = self.model(self.obs_var).data.numpy().ravel()
         noise = np.exp(self.log_std_val) * np.random.randn(self.m)
         action = mean + noise
-        return [action, {'mean': mean, 'log_std': self.log_std_val, 'evaluation': mean}]
+        return [action, {'mean':mean, 'log_std':self.log_std_val, 'evaluation':mean}]
+        
+    def get_action_batch(self, observations, return_info=False):
+        n = observations.shape[0]
+        obs_var = Variable(torch.from_numpy(observations).float(), requires_grad=False)
+        means = self.model(obs_var).data.numpy()
+        noise = np.exp(self.log_std_val) * np.random.randn(n, self.m)
+        action = means + noise
+        if return_info:
+            return [action, {'mean':means, 'log_std':self.log_std_val, 'evaluation':means}]
+        else:
+            return action
 
     def mean_LL(self, observations, actions, model=None, log_std=None):
         model = self.model if model is None else model
