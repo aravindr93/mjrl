@@ -26,5 +26,5 @@ train_agent(job_name='off_policy_pm',
             num_traj=40,      # samples = 40*25 = 1000
             save_freq=5,
             evaluation_rollouts=None,
-            plot_keys=['stoc_pol_mean', 'running_score'])
+            plot_keys=['stoc_pol_mean', 'running_score'], include_iteration=True)
 print("time taken = %f" % (timer.time()-ts))

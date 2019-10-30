@@ -23,7 +23,7 @@ def train_agent(job_name, agent,
                 save_freq = 10,
                 evaluation_rollouts = None,
                 plot_keys = ['stoc_pol_mean'],
-                ):
+                include_iteration=False):
 
     np.random.seed(seed)
     if os.path.isdir(job_name) == False:
@@ -47,7 +47,10 @@ def train_agent(job_name, agent,
             best_perf = train_curve[i-1]
 
         N = num_traj if sample_mode == 'trajectories' else num_samples
-        args = dict(N=N, sample_mode=sample_mode, gamma=gamma, gae_lambda=gae_lambda, num_cpu=num_cpu, iteration=i)
+        args = dict(N=N, sample_mode=sample_mode, gamma=gamma, gae_lambda=gae_lambda, num_cpu=num_cpu)
+
+        if include_iteration:
+            args['iteration'] = i
         stats = agent.train_step(**args)
         train_curve[i] = stats[0]
 
