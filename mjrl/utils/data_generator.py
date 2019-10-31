@@ -4,7 +4,6 @@ import argparse
 import pickle
 
 from mjrl.utils.gym_env import GymEnv
-from mjrl.utils.replay_buffer import TrajectoryReplayBuffer
 from mjrl.samplers.core import sample_paths
 
 
@@ -32,7 +31,6 @@ if __name__ == '__main__':
         print('must specify a policy directory if mode is', POLICY_MODE)
         exit()
     
-    replay_buffer = TrajectoryReplayBuffer()
 
     if args.mode == POLICY_MODE:
         policy = pickle.load(open(args.policy, 'rb'))

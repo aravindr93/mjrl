@@ -82,10 +82,13 @@ class NPGOffPolicy(NPG):
         # loop over number of policy updates
         for k in range(self.num_policy_updates):
             # fit the Q function
-            self.baseline.update_network()
-
+            losses = self.baseline.update_network()
+            # TODO: Do somethign with losses
+            print(np.max(losses))
             # update the policy
             self.update_policy(paths, self.fit_on_policy and k == 0)
+
+            print('buffer size', self.baseline.buffer['observations'].shape[0])
         
         path_returns = [sum(p["rewards"]) for p in paths]
         mean_return = np.mean(path_returns)
@@ -167,7 +170,7 @@ class NPGOffPolicy(NPG):
         weights = Qs - self.get_value(observations, times)
         return observations, actions, weights
 
-
+    # TODO: this is implemented in QPi. move there
     def get_value(self, observations, times):
         assert observations.shape[0] == times.shape[0]
         n = observations.shape[0]

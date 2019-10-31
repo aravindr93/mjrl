@@ -54,6 +54,8 @@ class TrajectoryReplayBuffer:
     def is_cuda(self):
         return not(self.device == 'cpu')
 
+    def __getitem__(self, key):
+        return self.buffer[key]
 
 if __name__ == '__main__':
     from mjrl.policies.gaussian_mlp import MLP
