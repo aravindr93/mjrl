@@ -31,7 +31,7 @@ class PotholePointMassEnv(PointMassEnv):
         in_rect_penalty = 0.0
         close_bonus = 0.0
         if self.is_in_rectangle(agent_pos[0], agent_pos[1]):
-            in_rect_penalty -= 10
+            in_rect_penalty -= 100
 
         if l2_dist <= 0.01:
             close_bonus += 10
