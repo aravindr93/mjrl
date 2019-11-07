@@ -181,7 +181,7 @@ class QPi:
         if type(t) == np.ndarray:
             t = torch.from_numpy(t).float()
         t = t.float()
-        t = t/self.horizon
+        t = (t+1.0)/self.horizon
         t_feat = torch.stack([t**(k+1) for k in range(self.time_dim)], -1)
         return t_feat
 
@@ -217,7 +217,7 @@ class QPi:
         terminal = self.buffer['is_terminal'][idx].view(-1, 1).detach()
         r = self.buffer['rewards'][idx].detach()
         t = self.buffer['time'][idx].detach()
-        bootstrap = self.compute_average_value(next_s, t, use_mu_approx, target_network=True)[-1].detach()
+        bootstrap = self.compute_average_value(next_s, t+1, use_mu_approx, target_network=True)[-1].detach()
         target = r.view(-1, 1) + self.gamma * bootstrap * (1.0 - terminal)
         return target
 
