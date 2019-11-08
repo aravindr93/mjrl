@@ -125,7 +125,8 @@ class QNetwork(nn.Module):
 
 class QPi:
     def __init__(self, policy, state_dim, act_dim, time_dim, horizon, replay_buffer, gamma=0.9, hidden_size=(64, 64), seed=123,
-                 fit_lr=1e-3, fit_wd=0.0, batch_size=64, num_bellman_iters=1, num_fit_iters=16, device='cpu', activation='relu', **kwargs):
+                 fit_lr=1e-3, fit_wd=0.0, batch_size=64, num_bellman_iters=1, num_fit_iters=16, device='cpu', activation='relu',
+                 use_mu_approx=True, num_value_actions=-1, **kwargs):
 
         # Terminology:
         # Bellman iterations : (outer loop) in each iteration, we sync the target network and learner network
@@ -153,6 +154,12 @@ class QPi:
         self.batch_size = batch_size                # batch size for each gradient step
         self.num_fit_iters = num_fit_iters          # fixing targets, number of optimization steps to approximate target
         self.num_bellman_iters = num_bellman_iters  # number of times to sync target and learner networks
+
+        self.use_mu_approx = use_mu_approx
+        self.num_value_actions = num_value_actions
+        if not self.use_mu_approx:
+            if self.num_value_actions < 0:
+                raise ValueError('num_value_actions must be greater than 0 when use_mu_approx is False. got: {}'.format(self.num_value_actions))
 
     def to(self, device):
         self.network.to(device)
@@ -191,12 +198,14 @@ class QPi:
         if len(a.shape) == 1:
             a = a.reshape(1, -1)
         if type(t) != np.ndarray:
-            t = np.array([t])
+            # t = np.array([t])
+            t = t.detach().cpu().numpy()
+        
         Q = self.forward(s, a, t, target_network)
         return Q.to('cpu').data.numpy()
 
-    def compute_average_value(self, s, t, use_mu_approx=True, target_network=False):
-        if use_mu_approx:
+    def compute_average_value(self, s, t, target_network=False):
+        if self.use_mu_approx:
             if type(s) == np.ndarray:
                 s = torch.from_numpy(s).float()
             s = s.to('cpu')
@@ -205,9 +214,24 @@ class QPi:
             return [mu, Q, Q]
         else:
             # to return: (actions, corresponding Qs, and mean)
-            raise NotImplementedError
+            n = s.shape[0]
+            values = torch.zeros((n, 1))
+            actions = []
+            Qss = []
+            for _ in range(self.num_value_actions):
+                if type(s) == torch.Tensor: # TODO: keep as tensor. requires some code refactor
+                    s = s.detach().cpu().numpy()
 
-    def compute_bellman_targets(self, idx, use_mu_approx=True, *args, **kwargs):
+                a = self.policy.get_action_batch(s)
+                Qs = self.forward(s, a, t, target_network=target_network)
+                values += Qs
+                actions.append(a)
+                Qss.append(Qs)
+            values /= self.num_value_actions
+
+            return [actions, Qss, values]
+
+    def compute_bellman_targets(self, idx, *args, **kwargs):
         # For the states with index in the buffer given by idx, compute the Bellman targets
         # If the index corresponds to a terminal state, then the value of next state is 0.0
         amax = np.argmax(idx)
@@ -217,16 +241,16 @@ class QPi:
         terminal = self.buffer['is_terminal'][idx].view(-1, 1).detach()
         r = self.buffer['rewards'][idx].detach()
         t = self.buffer['time'][idx].detach()
-        bootstrap = self.compute_average_value(next_s, t+1, use_mu_approx, target_network=True)[-1].detach()
+        bootstrap = self.compute_average_value(next_s, t+1, target_network=True)[-1].detach()
         target = r.view(-1, 1) + self.gamma * bootstrap * (1.0 - terminal)
         return target
 
-    def fit_targets(self, use_mu_approx=True):
+    def fit_targets(self):
         losses = []
         for _ in range(self.num_fit_iters):
             n = self.buffer['observations'].shape[0]
             idx = np.random.permutation(n)[:self.batch_size]
-            targets = self.compute_bellman_targets(idx, use_mu_approx).detach()
+            targets = self.compute_bellman_targets(idx).detach()
             s = self.buffer['observations'][idx]
             a = self.buffer['actions'][idx]
             t = self.buffer['time'][idx]
@@ -238,13 +262,13 @@ class QPi:
             self.optimizer.step()
         return losses
 
-    def bellman_update(self, use_mu_approx=True):
+    def bellman_update(self):
         # This function should perform the bellman updates (i.e. fit targets, sync networks, fit targets again ...)
         losses = []
         for bellman_iter in range(self.num_bellman_iters):
             # sync the learner and target networks
             self.target_network.set_params(self.network.get_params())
             # make network approximate Bellman targets
-            iter_loss = self.fit_targets(use_mu_approx)
+            iter_loss = self.fit_targets()
             losses.append(np.mean(iter_loss))
         return losses

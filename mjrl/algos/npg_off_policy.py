@@ -17,9 +17,7 @@ class NPGOffPolicy(NPG):
                     num_update_states,
                     num_update_actions,
                     fit_on_policy,
-                    fit_off_policy,
-                    simple_value_func,
-                    num_value_actions=1
+                    fit_off_policy
                     ):
         """
         params:
@@ -43,11 +41,6 @@ class NPGOffPolicy(NPG):
         self.num_update_actions = num_update_actions
         self.fit_on_policy = fit_on_policy
         self.fit_off_policy = fit_off_policy
-        self.simple_value_func = simple_value_func
-        self.num_value_actions = num_value_actions
-        if not self.simple_value_func and self.num_value_actions <= 1:
-            # TODO: add string logging and scalar logging
-            print('warning doing non simple value function approximation with only one update action')
 
     def train_step(self, N,
                     env=None,
@@ -60,7 +53,7 @@ class NPGOffPolicy(NPG):
                     iteration=None):
 
         if iteration is None:
-            raise Exception('Must include iteration number in train_step')
+            raise Exception('Must set include_iteration=True in train_step()')
 
         # get new samples
         env = self.env.env_id if env is None else env
@@ -82,7 +75,7 @@ class NPGOffPolicy(NPG):
         # loop over number of policy updates
         for k in range(self.num_policy_updates):
             # fit the Q function
-            losses = self.baseline.update_network()
+            losses = self.baseline.bellman_update()
             # TODO: Do somethign with losses
             print(np.max(losses))
             # update the policy
@@ -157,7 +150,8 @@ class NPGOffPolicy(NPG):
         times = np.concatenate([path["time"] for path in paths])
 
         Qs = self.baseline.predict(observations, actions, times)
-        weights = Qs - self.get_value(observations, times)
+        _, _, Vs = self.baseline.compute_average_value(observations, times)
+        weights = Qs - Vs.detach().cpu().numpy()
 
         return observations, actions, weights
     
@@ -167,28 +161,6 @@ class NPGOffPolicy(NPG):
         times = samples['time'].to('cpu').numpy()
         actions = self.policy.get_action_batch(observations) 
         Qs = self.baseline.predict(observations, actions, times)
-        weights = Qs - self.get_value(observations, times)
+        _, _, Vs = self.baseline.compute_average_value(observations, times)
+        weights = Qs - Vs.detach().cpu().numpy()
         return observations, actions, weights
-
-    # TODO: this is implemented in QPi. move there
-    def get_value(self, observations, times):
-        assert observations.shape[0] == times.shape[0]
-        n = observations.shape[0]
-        if self.simple_value_func:
-            actions, info = self.policy.get_action_batch(observations, return_info=True)
-            mean_action = info['mean']
-            Q_mean = self.baseline.predict(observations, mean_action, times)
-            return Q_mean
-        else:
-            # observations = np.tile(observations, (self.num_value_actions, 1))
-            # times = np.tile(times, (self.num_value_actions))
-            values = np.zeros(n)
-            for j in range(self.num_value_actions):
-                actions = self.policy.get_action_batch(observations)
-                Qs = self.baseline.predict(observations, actions, times).reshape(-1)
-                values += Qs
-            values /= self.num_value_actions
-            return values
-
-
-
