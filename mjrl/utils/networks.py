@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from tqdm import tqdm
+import time
 
 
 class QNetwork(nn.Module):
@@ -10,6 +11,7 @@ class QNetwork(nn.Module):
                  transforms=None,
                  nonlineariry = None,
                  seed=123,
+                 device='cpu'
                  ):
         super(QNetwork, self).__init__()
 
@@ -25,20 +27,27 @@ class QNetwork(nn.Module):
         self.nonlinearity = torch.relu if nonlineariry is None else nonlineariry
 
         # transforms
-        self.device = 'cuda' if next(self.parameters()).is_cuda else 'cpu'
+        self.device = device
         self.reset_transforms()
         self.set_transforms(transforms)
 
         for param in list(self.parameters())[-2:]:  # only last layer
             param.data = 1e-2 * param.data
 
-    def to(self, device, *args, **kwargs):
-        device, dtype, non_blocking = torch._C._nn._parse_to(*args, **kwargs)
-        self.device = 'cpu' if device is None else device
-        self = super().to(*args, **kwargs)
-        for idx, tensor_var in enumerate(self.transforms_vars):
-            self.transforms_vars[idx] = tensor_var.to(self.device)
-        self.transforms = self.make_transforms_dict()
+        self.to(self.device)
+
+    # def to(self, device, *args, **kwargs):
+    #     # device, dtype, non_blocking = torch._C._nn._parse_to(*args, **kwargs)
+    #     print('to() device', device)
+    #     self.device = 'cpu' if device is None else device
+    #     self = super().to(*args, **kwargs)
+    #     self.transforms_to()
+    #     self.transforms = self.make_transforms_dict()
+    #     return self
+
+    def to(self, device):
+        self.transforms_to()
+        self=super().to(device)
         return self
 
     def make_transforms_dict(self):
@@ -49,6 +58,8 @@ class QNetwork(nn.Module):
                           )
         return transforms
 
+
+
     def reset_transforms(self):
         self.s_mean = torch.zeros(self.state_dim)
         self.s_sigma = torch.ones(self.state_dim)
@@ -58,13 +69,24 @@ class QNetwork(nn.Module):
         self.t_feat_sigma = torch.ones(self.t_feat_dim)
         self.out_mean = torch.tensor(0.0)
         self.out_sigma = torch.tensor(1.0)
-        self.transforms_vars = [self.s_mean, self.s_sigma, self.a_mean, self.a_sigma,
-                               self.t_feat_mean, self.t_feat_sigma, self.out_mean, self.out_sigma]
 
-        for idx, tensor_var in enumerate(self.transforms_vars):
-            self.transforms_vars[idx] = tensor_var.to(self.device)
+        self.transforms_to()
 
         self.transforms = self.make_transforms_dict()
+
+    def transforms_to(self, device=None):
+        if device is not None:
+            self.device = device
+
+        self.s_mean = self.s_mean.to(self.device)
+        self.s_sigma = self.s_sigma.to(self.device)
+        self.a_mean = self.a_mean.to(self.device)
+        self.a_sigma = self.a_sigma.to(self.device)
+        self.t_feat_mean =  self.t_feat_mean.to(self.device)
+        self.t_feat_sigma = self.t_feat_sigma.to(self.device)
+        self.out_mean = self.out_mean.to(self.device)
+        self.out_sigma = self.out_sigma.to(self.device)
+        
 
     def set_transforms(self, transforms=None):
         # transforms is either None or of type dictionary
@@ -82,18 +104,15 @@ class QNetwork(nn.Module):
 
         else:
             print("Not setting the transforms. Input was either None or in unsupported format.")
-
-        self.transforms_vars = [self.s_mean, self.s_sigma, self.a_mean, self.a_sigma,
-                               self.t_feat_mean, self.t_feat_sigma, self.out_mean, self.out_sigma]
-
-        for idx, tensor_var in enumerate(self.transforms_vars):
-            self.transforms_vars[idx] = tensor_var.to(self.device)
-
+        self.transforms_to()
         self.transforms = self.make_transforms_dict()
 
     def forward(self, s, a, t_feat):
         if s.dim() != a.dim():
             print("State and action inputs should be of the same size")
+        s = s.to(self.device)
+        a = a.to(self.device)
+
         # normalize inputs
         s_in = (s - self.s_mean)/(self.s_sigma + 1e-6)
         a_in = (a - self.a_mean)/(self.a_sigma + 1e-6)
@@ -126,7 +145,7 @@ class QNetwork(nn.Module):
 class QPi:
     def __init__(self, policy, state_dim, act_dim, time_dim, horizon, replay_buffer, gamma=0.9, hidden_size=(64, 64), seed=123,
                  fit_lr=1e-3, fit_wd=0.0, batch_size=64, num_bellman_iters=1, num_fit_iters=16, device='cpu', activation='relu',
-                 use_mu_approx=True, num_value_actions=-1, **kwargs):
+                 use_mu_approx=True, num_value_actions=-1, summary_writer=None, **kwargs):
 
         # Terminology:
         # Bellman iterations : (outer loop) in each iteration, we sync the target network and learner network
@@ -139,12 +158,13 @@ class QPi:
         self.time_dim = time_dim
         self.horizon = horizon
         self.gamma = gamma
-        self.buffer = replay_buffer
         self.device = 'cuda' if (device == 'gpu' or device == 'cuda') else 'cpu'
+        self.buffer = replay_buffer.to(self.device)
 
-        self.network = QNetwork(state_dim, act_dim, time_dim, hidden_size, seed=seed)
+        self.network = QNetwork(state_dim, act_dim, time_dim, hidden_size, seed=seed, device=device)
         self.network.to(self.device)
-        self.target_network = QNetwork(state_dim, act_dim, time_dim, hidden_size, seed=seed)
+
+        self.target_network = QNetwork(state_dim, act_dim, time_dim, hidden_size, seed=seed, device=device)
         self.target_network = self.target_network.to(self.device)
         self.target_network.set_params(self.network.get_params())
 
@@ -160,6 +180,8 @@ class QPi:
         if not self.use_mu_approx:
             if self.num_value_actions < 0:
                 raise ValueError('num_value_actions must be greater than 0 when use_mu_approx is False. got: {}'.format(self.num_value_actions))
+        
+        self.summary_writer = summary_writer
 
     def to(self, device):
         self.network.to(device)
@@ -187,6 +209,7 @@ class QPi:
     def featurize_time(self, t):
         if type(t) == np.ndarray:
             t = torch.from_numpy(t).float()
+        t = t.to(self.device)
         t = t.float()
         t = (t+1.0)/self.horizon
         t_feat = torch.stack([t**(k+1) for k in range(self.time_dim)], -1)
@@ -215,7 +238,7 @@ class QPi:
         else:
             # to return: (actions, corresponding Qs, and mean)
             n = s.shape[0]
-            values = torch.zeros((n, 1))
+            values = torch.zeros((n, 1), device=self.device)
             actions = []
             Qss = []
             for _ in range(self.num_value_actions):
@@ -265,10 +288,12 @@ class QPi:
     def bellman_update(self):
         # This function should perform the bellman updates (i.e. fit targets, sync networks, fit targets again ...)
         losses = []
-        for bellman_iter in range(self.num_bellman_iters):
+        start = time.time()
+        for bellman_iter in tqdm(range(self.num_bellman_iters)):
             # sync the learner and target networks
             self.target_network.set_params(self.network.get_params())
             # make network approximate Bellman targets
             iter_loss = self.fit_targets()
             losses.append(np.mean(iter_loss))
-        return losses
+        update_time = time.time() - start
+        return losses, update_time

@@ -50,6 +50,7 @@ class TrajectoryReplayBuffer:
         self.device = device
         for k in self.buffer.keys():
             self.buffer[k] = self.buffer[k].to(device)
+        return self
 
     def is_cuda(self):
         return not(self.device == 'cpu')

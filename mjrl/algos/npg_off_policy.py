@@ -17,7 +17,8 @@ class NPGOffPolicy(NPG):
                     num_update_states,
                     num_update_actions,
                     fit_on_policy,
-                    fit_off_policy
+                    fit_off_policy,
+                    summary_writer=None,
                     ):
         """
         params:
@@ -41,6 +42,7 @@ class NPGOffPolicy(NPG):
         self.num_update_actions = num_update_actions
         self.fit_on_policy = fit_on_policy
         self.fit_off_policy = fit_off_policy
+        self.summary_writer = summary_writer
 
     def train_step(self, N,
                     env=None,
@@ -73,21 +75,61 @@ class NPGOffPolicy(NPG):
         self.baseline.buffer.push_many(paths)
 
         # loop over number of policy updates
+
+        update_stats = []
+        bellman_losses = []
+        total_update_time = 0.0
         for k in range(self.num_policy_updates):
             # fit the Q function
-            losses = self.baseline.bellman_update()
-            # TODO: Do somethign with losses
-            print(np.max(losses))
+            losses, btime = self.baseline.bellman_update()
             # update the policy
-            self.update_policy(paths, self.fit_on_policy and k == 0)
-
-            print('buffer size', self.baseline.buffer['observations'].shape[0])
+            stat = self.update_policy(paths, self.fit_on_policy and k == 0)
+            update_stats.append(stat)
+            bellman_losses.append(losses)
+            total_update_time += btime
         
         path_returns = [sum(p["rewards"]) for p in paths]
         mean_return = np.mean(path_returns)
         std_return = np.std(path_returns)
         min_return = np.amin(path_returns)
         max_return = np.amax(path_returns)
+
+        if self.summary_writer:
+            self.summary_writer.add_scalar('MeanReturn/train', mean_return, iteration)
+            self.summary_writer.add_scalar('MinReturn/train', min_return, iteration)
+            self.summary_writer.add_scalar('MaxReturn/train', max_return, iteration)
+            self.summary_writer.add_scalar('StdReturn/train', std_return, iteration)
+
+            self.summary_writer.add_scalar('BufferSize', self.baseline.buffer['observations'].shape[0], iteration)
+            self.summary_writer.add_scalar('BellmanUpdateTime', total_update_time, iteration)
+
+            bellman_means = []
+            for i, (stat, losses) in enumerate(zip(update_stats, bellman_losses)):
+                alpha, n_step_size, t_gLL, t_FIM, surr_before, surr_after, kl_dist = stat
+                self.summary_writer.add_scalar('alpha/sub_iteration_{}'.format(i), alpha, iteration)
+                self.summary_writer.add_scalar('delta/sub_iteration_{}'.format(i), n_step_size, iteration)
+                self.summary_writer.add_scalar('time_vpg/sub_iteration_{}'.format(i), t_gLL, iteration)
+                self.summary_writer.add_scalar('time_npg/sub_iteration_{}'.format(i), t_FIM, iteration)
+                self.summary_writer.add_scalar('surr_improvement/sub_iteration_{}'.format(i), surr_after - surr_before, iteration)
+                self.summary_writer.add_scalar('kl_dist/sub_iteration_{}'.format(i), kl_dist, iteration)
+
+                mean_loss = np.mean(losses)
+                min_loss = np.min(losses)
+                max_loss = np.max(losses)
+                bellman_means.append(mean_loss)
+                self.summary_writer.add_scalar('MeanBellmanLoss/sub_iteration_{}'.format(i), mean_loss, iteration)
+                self.summary_writer.add_scalar('MaxBellmanLoss/sub_iteration_{}'.format(i), max_loss, iteration)
+                self.summary_writer.add_scalar('MinBellmanLoss/sub_iteration_{}'.format(i), min_loss, iteration)
+
+            self.summary_writer.add_scalar('MeanBellmanLoss/mean', np.mean(bellman_means), iteration)
+            
+            # log the policy stds
+            stds = np.exp(self.policy.log_std.detach().numpy())
+            for i, std in enumerate(stds):
+                self.summary_writer.add_scalar('PolicyStd/std_{}'.format(i), std, iteration)
+
+            
+
         return [mean_return, std_return, min_return, max_return]
 
     def update_policy(self, paths, fit_on_policy):
@@ -105,6 +147,7 @@ class NPGOffPolicy(NPG):
         surr_after = self.CPI_surrogate(observations, actions, weights).data.numpy().ravel()[0]
         kl_dist = self.kl_old_new(observations, actions).data.numpy().ravel()[0]
         self.policy.set_param_values(new_params, set_new=True, set_old=True)
+        return alpha, n_step_size, t_gLL, t_FIM, surr_before, surr_after, kl_dist
 
     def update_from_states_actions(self, observations, actions, weights):
         t_gLL = 0.0
