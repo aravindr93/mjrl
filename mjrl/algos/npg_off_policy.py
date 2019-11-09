@@ -84,6 +84,7 @@ class NPGOffPolicy(NPG):
             losses, btime = self.baseline.bellman_update()
             # update the policy
             stat = self.update_policy(paths, self.fit_on_policy and k == 0)
+
             update_stats.append(stat)
             bellman_losses.append(losses)
             total_update_time += btime
@@ -128,7 +129,7 @@ class NPGOffPolicy(NPG):
             for i, std in enumerate(stds):
                 self.summary_writer.add_scalar('PolicyStd/std_{}'.format(i), std, iteration)
 
-            
+            # TODO: log the mse between returns and predicted Qs
 
         return [mean_return, std_return, min_return, max_return]
 
@@ -138,12 +139,17 @@ class NPGOffPolicy(NPG):
         else:
             observations, actions, weights = self.process_replay()
 
-        # TODO: normalize weights
+        # TODO: more normalize weight modes
+        weights = (weights - np.mean(weights)) / (np.std(weights) + 1e-6)
 
         # update policy
         surr_before = self.CPI_surrogate(observations, actions, weights).data.numpy().ravel()[0]
         alpha, n_step_size, t_gLL, t_FIM, new_params = self.update_from_states_actions(observations, actions, weights)
         
+        if np.isnan(new_params).any():
+            import pdb; pdb.set_trace()
+            raise RuntimeError('policy has nan params')
+
         surr_after = self.CPI_surrogate(observations, actions, weights).data.numpy().ravel()[0]
         kl_dist = self.kl_old_new(observations, actions).data.numpy().ravel()[0]
         self.policy.set_param_values(new_params, set_new=True, set_old=True)

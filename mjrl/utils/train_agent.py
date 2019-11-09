@@ -23,7 +23,8 @@ def train_agent(job_name, agent,
                 save_freq = 10,
                 evaluation_rollouts = None,
                 plot_keys = ['stoc_pol_mean'],
-                include_iteration=False):
+                include_iteration=False,
+                summary_writer=None):
 
     np.random.seed(seed)
     if os.path.isdir(job_name) == False:
@@ -56,11 +57,15 @@ def train_agent(job_name, agent,
 
         if evaluation_rollouts is not None and evaluation_rollouts > 0:
             print("Performing evaluation rollouts ........")
+
             eval_paths = sample_paths(num_traj=evaluation_rollouts, policy=agent.policy, num_cpu=num_cpu,
-                                      env=e.env_id, eval_mode=True, base_seed=seed)
+                                        env=e.env_id, eval_mode=True, base_seed=seed)
+
             mean_pol_perf = np.mean([np.sum(path['rewards']) for path in eval_paths])
             if agent.save_logs:
                 agent.logger.log_kv('eval_score', mean_pol_perf)
+            if summary_writer:
+                summary_writer.add_scalar('MeanReturn/evaluation', mean_pol_perf, i)
 
         if i % save_freq == 0 and i > 0:
             if agent.save_logs:
@@ -87,6 +92,7 @@ def train_agent(job_name, agent,
             print_data = sorted(filter(lambda v: np.asarray(v[1]).size == 1,
                                        agent.logger.get_current_log().items()))
             print(tabulate(print_data))
+
 
     # final save
     pickle.dump(best_policy, open('iterations/best_policy.pickle', 'wb'))
