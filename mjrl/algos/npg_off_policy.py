@@ -77,17 +77,25 @@ class NPGOffPolicy(NPG):
         # loop over number of policy updates
 
         update_stats = []
+        total_losses = []
         bellman_losses = []
+        reconstruction_losses = []
+        reward_losses = []
         total_update_time = 0.0
         for k in range(self.num_policy_updates):
             # fit the Q function
-            losses, btime = self.baseline.bellman_update()
+            # losses, btime = self.baseline.bellman_update()
+            total_loss, bellman_loss, reconstruction_loss, \
+                reward_loss, update_time = self.baseline.bellman_update(all_losses=True)
             # update the policy
             stat = self.update_policy(paths, self.fit_on_policy and k == 0)
 
             update_stats.append(stat)
-            bellman_losses.append(losses)
-            total_update_time += btime
+            total_losses.append(total_loss)
+            bellman_losses.append(bellman_loss)
+            reconstruction_losses.append(reconstruction_loss)
+            reward_losses.append(reward_loss)
+            total_update_time += update_time
         
         path_returns = [sum(p["rewards"]) for p in paths]
         mean_return = np.mean(path_returns)
@@ -104,8 +112,13 @@ class NPGOffPolicy(NPG):
             self.summary_writer.add_scalar('BufferSize', self.baseline.buffer['observations'].shape[0], iteration)
             self.summary_writer.add_scalar('BellmanUpdateTime', total_update_time, iteration)
 
+            total_means = []
             bellman_means = []
-            for i, (stat, losses) in enumerate(zip(update_stats, bellman_losses)):
+            recon_means = []
+            reward_means = []
+            for i, (stat, total_loss, losses, recon_loss, reward_loss) in enumerate(zip(update_stats,
+                total_losses, bellman_losses, reconstruction_losses, reward_losses)):
+
                 alpha, n_step_size, t_gLL, t_FIM, surr_before, surr_after, kl_dist = stat
                 self.summary_writer.add_scalar('alpha/sub_iteration_{}'.format(i), alpha, iteration)
                 self.summary_writer.add_scalar('delta/sub_iteration_{}'.format(i), n_step_size, iteration)
@@ -114,15 +127,22 @@ class NPGOffPolicy(NPG):
                 self.summary_writer.add_scalar('surr_improvement/sub_iteration_{}'.format(i), surr_after - surr_before, iteration)
                 self.summary_writer.add_scalar('kl_dist/sub_iteration_{}'.format(i), kl_dist, iteration)
 
-                mean_loss = np.mean(losses)
-                min_loss = np.min(losses)
-                max_loss = np.max(losses)
-                bellman_means.append(mean_loss)
-                self.summary_writer.add_scalar('MeanBellmanLoss/sub_iteration_{}'.format(i), mean_loss, iteration)
-                self.summary_writer.add_scalar('MaxBellmanLoss/sub_iteration_{}'.format(i), max_loss, iteration)
-                self.summary_writer.add_scalar('MinBellmanLoss/sub_iteration_{}'.format(i), min_loss, iteration)
+                mean_total_loss = self._log_stats('TotalLoss', i, iteration, total_loss)
+                total_means.append(mean_total_loss)
 
+                mean_bellman_loss = self._log_stats('BellmanLoss', i, iteration, losses)
+                bellman_means.append(mean_bellman_loss)
+
+                mean_recon_loss = self._log_stats('ReconstructionLoss', i, iteration, recon_loss)
+                recon_means.append(mean_recon_loss)
+
+                mean_reward_loss = self._log_stats('RewardLoss', i, iteration, reward_loss)
+                reward_means.append(mean_reward_loss)
+
+            self.summary_writer.add_scalar('MeanTotalLoss/mean', np.mean(total_means), iteration)
             self.summary_writer.add_scalar('MeanBellmanLoss/mean', np.mean(bellman_means), iteration)
+            self.summary_writer.add_scalar('MeanReconstructionLoss/mean', np.mean(recon_means), iteration)
+            self.summary_writer.add_scalar('MeanRewardLoss/mean', np.mean(reward_means), iteration)
             
             # log the policy stds
             stds = np.exp(self.policy.log_std.detach().numpy())
@@ -132,6 +152,16 @@ class NPGOffPolicy(NPG):
             # TODO: log the mse between returns and predicted Qs
 
         return [mean_return, std_return, min_return, max_return]
+
+    def _log_stats(self, key, i, iteration, losses):
+        mean_loss = np.mean(losses)
+        min_loss = np.min(losses)
+        max_loss = np.max(losses)
+        
+        self.summary_writer.add_scalar('Mean{}/sub_iteration_{}'.format(key, i), mean_loss, iteration)
+        self.summary_writer.add_scalar('Max{}/sub_iteration_{}'.format(key, i), max_loss, iteration)
+        self.summary_writer.add_scalar('Min{}/sub_iteration_{}'.format(key, i), min_loss, iteration)
+        return mean_loss
 
     def update_policy(self, paths, fit_on_policy):
         if fit_on_policy:

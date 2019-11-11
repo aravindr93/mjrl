@@ -4,6 +4,9 @@ import torch.nn as nn
 from tqdm import tqdm
 import time
 
+from mjrl.utils.TupleMLP import TupleMLP
+
+DEFAULT_HIDDEN_SIZE = 512
 
 class QNetwork(nn.Module):
     def __init__(self, state_dim, act_dim, time_feat_dim=4,
@@ -11,7 +14,13 @@ class QNetwork(nn.Module):
                  transforms=None,
                  nonlineariry = None,
                  seed=123,
-                 device='cpu'
+                 device='cpu',
+                 shared_hidden_sizes=(DEFAULT_HIDDEN_SIZE, DEFAULT_HIDDEN_SIZE),
+                 q_function_hidden_sizes=(DEFAULT_HIDDEN_SIZE,),
+                 reconstruction_hidden_sizes=(DEFAULT_HIDDEN_SIZE,),
+                 reward_hidden_sizes=(DEFAULT_HIDDEN_SIZE,),
+                 nonlin = nn.ReLU(),
+                 d_shared = DEFAULT_HIDDEN_SIZE,
                  ):
         super(QNetwork, self).__init__()
 
@@ -24,15 +33,31 @@ class QNetwork(nn.Module):
         # hidden layers
         self.fc_layers = nn.ModuleList([nn.Linear(self.layer_sizes[i], self.layer_sizes[i+1])
                                         for i in range(len(self.layer_sizes)-1)])
-        self.nonlinearity = torch.relu if nonlineariry is None else nonlineariry
+        
+        if nonlineariry is not None:
+            raise TypeError('The keyword argument nonlinearity is no longer used')
+
+        # self.nonlinearity = torch.relu if nonlineariry is None else nonlineariry
+
+        # ********************** New format *****************
+        self.d_shared = d_shared
+        self.shared_hidden_sizes = shared_hidden_sizes
+        self.q_function_hidden_sizes = q_function_hidden_sizes
+        self.reconstruction_hidden_sizes = reconstruction_hidden_sizes
+        self.reward_hidden_sizes = reward_hidden_sizes
+        self.shared_network = TupleMLP(self.state_dim + self.act_dim + self.t_feat_dim, self.d_shared, self.shared_hidden_sizes)
+        self.q_network = TupleMLP(self.d_shared, 1, self.q_function_hidden_sizes)
+        self.reward_network = TupleMLP(self.d_shared, 1, self.reward_hidden_sizes)
+        self.reconstruction_network = TupleMLP(self.d_shared, self.state_dim, self.reconstruction_hidden_sizes)
 
         # transforms
         self.device = device
         self.reset_transforms()
         self.set_transforms(transforms)
 
-        for param in list(self.parameters())[-2:]:  # only last layer
-            param.data = 1e-2 * param.data
+        # TODO: commenting this out for now, but should look at initialization 
+        # for param in list(self.parameters())[-2:]:  # only last layer
+        #     param.data = 1e-2 * param.data
 
         self.to(self.device)
 
@@ -57,8 +82,6 @@ class QNetwork(nn.Module):
                           out_mean=self.out_mean, out_sigma=self.out_sigma
                           )
         return transforms
-
-
 
     def reset_transforms(self):
         self.s_mean = torch.zeros(self.state_dim)
@@ -107,7 +130,8 @@ class QNetwork(nn.Module):
         self.transforms_to()
         self.transforms = self.make_transforms_dict()
 
-    def forward(self, s, a, t_feat):
+    def forward(self, s, a, t_feat, return_auxilary=False):
+
         if s.dim() != a.dim():
             print("State and action inputs should be of the same size")
         s = s.to(self.device)
@@ -117,14 +141,23 @@ class QNetwork(nn.Module):
         s_in = (s - self.s_mean)/(self.s_sigma + 1e-6)
         a_in = (a - self.a_mean)/(self.a_sigma + 1e-6)
         t_in = (t_feat - self.t_feat_mean)/(self.t_feat_sigma + 1e-6)
-        out = torch.cat([s_in, a_in, t_in], -1)
-        for i in range(len(self.fc_layers)-1):
-            out = self.fc_layers[i](out)
-            out = self.nonlinearity(out)
-        out = self.fc_layers[-1](out)
-        # de-normalize the output with state transformations
-        out = out * self.out_sigma + self.out_mean
-        return out
+        # out = torch.cat([s_in, a_in, t_in], -1)
+        # for i in range(len(self.fc_layers)-1):
+        #     out = self.fc_layers[i](out)
+        #     out = self.nonlinearity(out)
+        # out = self.fc_layers[-1](out)
+        # # de-normalize the output with state transformations
+        # out = out * self.out_sigma + self.out_mean
+        x = torch.cat([s_in, a_in, t_in], -1)
+        shared_features = self.shared_network(x)
+        Q = self.q_network(shared_features)
+
+        if return_auxilary:
+            state_prime = self.reconstruction_network(shared_features)
+            reward = self.reward_network(shared_features)
+            return Q, state_prime, reward
+        else:
+            return Q
 
     def get_params(self):
         network_weights = [p.data for p in self.parameters()]
@@ -145,7 +178,10 @@ class QNetwork(nn.Module):
 class QPi:
     def __init__(self, policy, state_dim, act_dim, time_dim, horizon, replay_buffer, gamma=0.9, hidden_size=(64, 64), seed=123,
                  fit_lr=1e-3, fit_wd=0.0, batch_size=64, num_bellman_iters=1, num_fit_iters=16, device='cpu', activation='relu',
-                 use_mu_approx=True, num_value_actions=-1, summary_writer=None, **kwargs):
+                 use_mu_approx=True, num_value_actions=-1, summary_writer=None, shared_hidden_sizes=(DEFAULT_HIDDEN_SIZE, DEFAULT_HIDDEN_SIZE),
+                 q_function_hidden_sizes=(DEFAULT_HIDDEN_SIZE,), reconstruction_hidden_sizes=(DEFAULT_HIDDEN_SIZE,),
+                 reward_hidden_sizes=(DEFAULT_HIDDEN_SIZE,), nonlin = nn.ReLU(), d_shared = DEFAULT_HIDDEN_SIZE, use_auxilary=True, 
+                 recon_weight=1.0, reward_weight=1e-1, **kwargs):
 
         # Terminology:
         # Bellman iterations : (outer loop) in each iteration, we sync the target network and learner network
@@ -161,7 +197,12 @@ class QPi:
         self.device = 'cuda' if (device == 'gpu' or device == 'cuda') else 'cpu'
         self.buffer = replay_buffer.to(self.device)
 
-        self.network = QNetwork(state_dim, act_dim, time_dim, hidden_size, seed=seed, device=device)
+        self.use_auxilary = use_auxilary
+        
+        self.network = QNetwork(state_dim, act_dim, time_dim, hidden_size, seed=seed, device=device, shared_hidden_sizes=shared_hidden_sizes,
+                q_function_hidden_sizes=q_function_hidden_sizes, reconstruction_hidden_sizes=reconstruction_hidden_sizes,
+                reward_hidden_sizes=reward_hidden_sizes, nonlin = nonlin, d_shared = d_shared)
+
         self.network.to(self.device)
 
         self.target_network = QNetwork(state_dim, act_dim, time_dim, hidden_size, seed=seed, device=device)
@@ -183,6 +224,9 @@ class QPi:
         
         self.summary_writer = summary_writer
 
+        self.recon_weight = recon_weight
+        self.reward_weight = reward_weight
+
     def to(self, device):
         self.network.to(device)
         self.target_network.to(device)
@@ -190,7 +234,7 @@ class QPi:
     def is_cuda(self):
         return True if next(self.network.parameters()).is_cuda else False
 
-    def forward(self, s, a, t, target_network=False):
+    def forward(self, s, a, t, target_network=False, return_auxilary=False):
         # here t is a 1D array, which we featurize and pass to Q network.
         if type(s) == np.ndarray:
             s = torch.from_numpy(s).float()
@@ -200,11 +244,11 @@ class QPi:
         s = s.to(self.device)
         a = a.to(self.device)
         t_feat = t_feat.to(self.device)
+
         if target_network:
-            prediction = self.target_network.forward(s, a, t_feat)
+            return self.target_network(s, a, t_feat, return_auxilary=return_auxilary)
         else:
-            prediction = self.network.forward(s, a, t_feat)
-        return prediction
+            return self.network(s, a, t_feat, return_auxilary=return_auxilary)
 
     def featurize_time(self, t):
         if type(t) == np.ndarray:
@@ -268,8 +312,16 @@ class QPi:
         target = r.view(-1, 1) + self.gamma * bootstrap * (1.0 - terminal)
         return target
 
-    def fit_targets(self):
+    def fit_targets(self, all_losses=False):
         losses = []
+        if all_losses and not self.use_auxilary:
+            raise ValueError('cannot return all losses if use_auxilary is False')
+
+        if all_losses:
+            bellman_losses = []
+            recon_losses = []
+            reward_losses = []
+
         for _ in range(self.num_fit_iters):
             n = self.buffer['observations'].shape[0]
             idx = np.random.permutation(n)[:self.batch_size]
@@ -277,23 +329,69 @@ class QPi:
             s = self.buffer['observations'][idx]
             a = self.buffer['actions'][idx]
             t = self.buffer['time'][idx]
-            preds = self.forward(s, a, t)
-            self.optimizer.zero_grad()
-            loss = self.loss_fn(preds, targets)
+
+            if self.use_auxilary:
+                Qs_hat, state_primes_hat, rewards_hat = self.forward(s, a, t, return_auxilary=True)
+                self.optimizer.zero_grad()
+
+                bellman_loss = self.loss_fn(Qs_hat, targets)
+
+                s_primes = self.buffer['observations'][idx+1]
+                mask = (1.0 - self.buffer['is_terminal'][idx]).view(-1, 1)
+                state_primes_hat_masked = state_primes_hat * mask
+                s_primes_masked = s_primes * mask
+                reconstruction_loss = self.loss_fn(state_primes_hat_masked, s_primes_masked)
+                
+                rewards = self.buffer['rewards'][idx].view(-1, 1)
+                reward_loss = self.loss_fn(rewards_hat, rewards)
+
+                loss = bellman_loss \
+                    + self.recon_weight * reconstruction_loss \
+                    + self.reward_weight * reward_loss
+
+                if all_losses:
+                    bellman_losses.append(bellman_loss.item())
+                    recon_losses.append(reconstruction_loss.item())
+                    reward_losses.append(reward_loss.item())
+            else:
+                preds = self.forward(s, a, t)
+                self.optimizer.zero_grad()
+                loss = self.loss_fn(preds, targets)
             losses.append(loss.item())
+
             loss.backward()
             self.optimizer.step()
-        return losses
 
-    def bellman_update(self):
+        if all_losses:
+            return losses, bellman_losses, recon_losses, reward_losses
+        else:
+            return losses
+
+    def bellman_update(self, all_losses=False):
         # This function should perform the bellman updates (i.e. fit targets, sync networks, fit targets again ...)
-        losses = []
+        total_losses = []
+        bellman_losses = []
+        reconstruction_losses = []
+        reward_losses = []
         start = time.time()
         for bellman_iter in tqdm(range(self.num_bellman_iters)):
             # sync the learner and target networks
             self.target_network.set_params(self.network.get_params())
             # make network approximate Bellman targets
-            iter_loss = self.fit_targets()
-            losses.append(np.mean(iter_loss))
+            
+            ret = self.fit_targets(all_losses=all_losses)
+            if all_losses:
+                losses, bellman_loss, reconstruction_loss, reward_loss = ret
+                total_losses.append(np.mean(losses))
+                reconstruction_losses.append(np.mean(reconstruction_loss))
+                reward_losses.append(np.mean(reward_loss))
+            else:
+                bellman_loss = ret
+            bellman_losses.append(np.mean(bellman_loss))
+
         update_time = time.time() - start
-        return losses, update_time
+
+        if all_losses:
+            return total_losses, bellman_losses, reconstruction_losses, reward_losses, update_time
+        else:
+            return bellman_losses, update_time
