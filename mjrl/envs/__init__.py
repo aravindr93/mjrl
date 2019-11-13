@@ -28,6 +28,20 @@ register(
     max_episode_steps=75,
 )
 
+register(
+    id='HopperStateVel-v0',
+    entry_point='mjrl.envs:HopperStateVelEnv',
+    max_episode_steps=1000,
+    kwargs={'use_current_state': True}
+)
+register(
+    id='HopperNextStateVel-v0',
+    entry_point='mjrl.envs:HopperStateVelEnv',
+    max_episode_steps=1000,
+    kwargs={'use_current_state': False}
+)
+
+
 from mjrl.envs.mujoco_env import MujocoEnv
 # ^^^^^ so that user gets the correct error
 # message if mujoco is not installed correctly
@@ -35,3 +49,4 @@ from mjrl.envs.point_mass import PointMassEnv
 from mjrl.envs.pothole_point_mass import PotholePointMassEnv
 from mjrl.envs.swimmer import SwimmerEnv
 from mjrl.envs.reacher_env import Reacher7DOFEnv
+from mjrl.envs.hopper_state_vel import HopperStateVelEnv
