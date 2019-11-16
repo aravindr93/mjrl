@@ -1,15 +1,14 @@
 import numpy as np
 from mjrl.utils.fc_network import FCNetwork
 import torch
-from torch.autograd import Variable
-
 
 class MLP:
     def __init__(self, env_spec,
                  hidden_sizes=(64,64),
                  min_log_std=-3,
                  init_log_std=0,
-                 seed=None):
+                 seed=None,
+                 device='cpu'):
         """
         :param env_spec: specifications of the env (see utils/gym_env.py)
         :param hidden_sizes: network hidden layer sizes (currently 2 layers only)
@@ -20,6 +19,7 @@ class MLP:
         self.n = env_spec.observation_dim  # number of states
         self.m = env_spec.action_dim  # number of actions
         self.min_log_std = min_log_std
+        self.device = device
 
         # Set seed
         # ------------------------
@@ -29,36 +29,36 @@ class MLP:
 
         # Policy network
         # ------------------------
-        self.model = FCNetwork(self.n, self.m, hidden_sizes)
+        self.model = FCNetwork(self.n, self.m, hidden_sizes, device=device)
         # make weights small
         for param in list(self.model.parameters())[-2:]:  # only last layer
            param.data = 1e-2 * param.data
-        self.log_std = Variable(torch.ones(self.m) * init_log_std, requires_grad=True)
+        self.log_std = torch.ones(self.m, requires_grad=True).to(device) * init_log_std
         self.trainable_params = list(self.model.parameters()) + [self.log_std]
 
         # Old Policy network
         # ------------------------
-        self.old_model = FCNetwork(self.n, self.m, hidden_sizes)
-        self.old_log_std = Variable(torch.ones(self.m) * init_log_std)
+        self.old_model = FCNetwork(self.n, self.m, hidden_sizes, device=device)
+        self.old_log_std = torch.ones(self.m, requires_grad=True).to(device) * init_log_std
         self.old_params = list(self.old_model.parameters()) + [self.old_log_std]
         for idx, param in enumerate(self.old_params):
             param.data = self.trainable_params[idx].data.clone()
 
         # Easy access variables
         # -------------------------
-        self.log_std_val = np.float64(self.log_std.data.numpy().ravel())
-        self.param_shapes = [p.data.numpy().shape for p in self.trainable_params]
-        self.param_sizes = [p.data.numpy().size for p in self.trainable_params]
+        self.log_std_val = np.float64(self.log_std.data.cpu().numpy().ravel())
+        self.param_shapes = [p.data.cpu().numpy().shape for p in self.trainable_params]
+        self.param_sizes = [p.data.cpu().numpy().size for p in self.trainable_params]
         self.d = np.sum(self.param_sizes)  # total number of params
 
         # Placeholders
         # ------------------------
-        self.obs_var = Variable(torch.randn(self.n), requires_grad=False)
+        self.obs_var = torch.randn(self.n)
 
     # Utility functions
     # ============================================
     def get_param_values(self):
-        params = np.concatenate([p.contiguous().view(-1).data.numpy()
+        params = np.concatenate([p.contiguous().view(-1).data.cpu().numpy()
                                  for p in self.trainable_params])
         return params.copy()
 
@@ -74,7 +74,7 @@ class MLP:
             self.trainable_params[-1].data = \
                 torch.clamp(self.trainable_params[-1], self.min_log_std).data
             # update log_std_val for sampling
-            self.log_std_val = np.float64(self.log_std.data.numpy().ravel())
+            self.log_std_val = np.float64(self.log_std.data.cpu().numpy().ravel())
         if set_old:
             current_idx = 0
             for idx, param in enumerate(self.old_params):
@@ -91,7 +91,7 @@ class MLP:
     def get_action(self, observation):
         o = np.float32(observation.reshape(1, -1))
         self.obs_var.data = torch.from_numpy(o)
-        mean = self.model(self.obs_var).data.numpy().ravel()
+        mean = self.model(self.obs_var).data.cpu().numpy().ravel()
         noise = np.exp(self.log_std_val) * np.random.randn(self.m)
         action = mean + noise
         return [action, {'mean': mean, 'log_std': self.log_std_val, 'evaluation': mean}]
@@ -99,14 +99,16 @@ class MLP:
     def mean_LL(self, observations, actions, model=None, log_std=None):
         model = self.model if model is None else model
         log_std = self.log_std if log_std is None else log_std
+        log_std = log_std.to(self.device)
         if type(observations) is not torch.Tensor:
-            obs_var = Variable(torch.from_numpy(observations).float(), requires_grad=False)
+            obs_var = torch.from_numpy(observations).to(self.device).float()
         else:
             obs_var = observations
         if type(actions) is not torch.Tensor:
-            act_var = Variable(torch.from_numpy(actions).float(), requires_grad=False)
+            act_var = torch.from_numpy(actions).float().to(self.device)
         else:
             act_var = actions
+        
         mean = model(obs_var)
         zs = (act_var - mean) / torch.exp(log_std)
         LL = - 0.5 * torch.sum(zs ** 2, dim=1) + \
@@ -116,7 +118,7 @@ class MLP:
 
     def log_likelihood(self, observations, actions, model=None, log_std=None):
         mean, LL = self.mean_LL(observations, actions, model, log_std)
-        return LL.data.numpy()
+        return LL.data.cpu().numpy()
 
     def old_dist_info(self, observations, actions):
         mean, LL = self.mean_LL(observations, actions, self.old_model, self.old_log_std)
@@ -143,3 +145,15 @@ class MLP:
         Dr = 2 * new_std ** 2 + 1e-8
         sample_kl = torch.sum(Nr / Dr + new_log_std - old_log_std, dim=1)
         return torch.mean(sample_kl)
+
+    def to(self, device):
+        self.device = device
+        self.model = self.model.to(self.device)
+        self.old_model = self.old_model.to(self.device)
+        self.log_std = self.log_std.to(self.device)
+        self.old_log_std = self.old_log_std.to(self.device)
+
+        self.trainable_params = list(self.model.parameters()) + [self.log_std]
+        self.old_params = list(self.old_model.parameters()) + [self.old_log_std]
+
+        self.obs_var = self.obs_var.to(self.device)

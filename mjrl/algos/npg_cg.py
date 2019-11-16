@@ -107,7 +107,7 @@ class NPG(BatchREINFORCE):
 
         # Optimization algorithm
         # --------------------------
-        surr_before = self.CPI_surrogate(observations, actions, advantages).data.numpy().ravel()[0]
+        surr_before = self.CPI_surrogate(observations, actions, advantages).data.cpu().numpy().ravel()[0]
 
         # VPG
         ts = timer.time()
