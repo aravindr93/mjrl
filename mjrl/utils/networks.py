@@ -6,7 +6,11 @@ import time
 
 from mjrl.utils.TupleMLP import TupleMLP
 
+from mjrl.utils.evaluate_q_function import evaluate_n_step, evaluate_start_end, mse
+
+
 DEFAULT_HIDDEN_SIZE = 512
+PRINT_TIMES = False
 
 class QNetwork(nn.Module):
     def __init__(self, state_dim, act_dim, time_feat_dim=4,
@@ -15,12 +19,12 @@ class QNetwork(nn.Module):
                  nonlineariry = None,
                  seed=123,
                  device='cpu',
-                 shared_hidden_sizes=(DEFAULT_HIDDEN_SIZE, DEFAULT_HIDDEN_SIZE),
                  q_function_hidden_sizes=(DEFAULT_HIDDEN_SIZE,),
-                 reconstruction_hidden_sizes=(DEFAULT_HIDDEN_SIZE,),
+                 reconstruction_hidden_sizes=(DEFAULT_HIDDEN_SIZE,DEFAULT_HIDDEN_SIZE),
                  reward_hidden_sizes=(DEFAULT_HIDDEN_SIZE,),
                  nonlin = nn.ReLU(),
-                 d_shared = DEFAULT_HIDDEN_SIZE,
+                 d_shared=DEFAULT_HIDDEN_SIZE,
+                 use_auxilary=True,
                  ):
         super(QNetwork, self).__init__()
 
@@ -31,8 +35,8 @@ class QNetwork(nn.Module):
         self.hidden_sizes = hidden_sizes
         self.layer_sizes = (state_dim + act_dim + time_feat_dim, ) + hidden_sizes + (1, )
         # hidden layers
-        self.fc_layers = nn.ModuleList([nn.Linear(self.layer_sizes[i], self.layer_sizes[i+1])
-                                        for i in range(len(self.layer_sizes)-1)])
+        # self.fc_layers = nn.ModuleList([nn.Linear(self.layer_sizes[i], self.layer_sizes[i+1])
+        #                                 for i in range(len(self.layer_sizes)-1)])
         
         if nonlineariry is not None:
             raise TypeError('The keyword argument nonlinearity is no longer used')
@@ -41,14 +45,14 @@ class QNetwork(nn.Module):
 
         # ********************** New format *****************
         self.d_shared = d_shared
-        self.shared_hidden_sizes = shared_hidden_sizes
+        self.use_auxilary = use_auxilary
         self.q_function_hidden_sizes = q_function_hidden_sizes
         self.reconstruction_hidden_sizes = reconstruction_hidden_sizes
         self.reward_hidden_sizes = reward_hidden_sizes
-        self.shared_network = TupleMLP(self.state_dim + self.act_dim + self.t_feat_dim, self.d_shared, self.shared_hidden_sizes)
-        self.q_network = TupleMLP(self.d_shared, 1, self.q_function_hidden_sizes)
-        self.reward_network = TupleMLP(self.d_shared, 1, self.reward_hidden_sizes)
-        self.reconstruction_network = TupleMLP(self.d_shared, self.state_dim, self.reconstruction_hidden_sizes)
+        self.q_network = TupleMLP((1+self.use_auxilary)*self.state_dim + self.act_dim + self.t_feat_dim, 1, self.q_function_hidden_sizes)
+        if self.use_auxilary:
+            self.reward_network = TupleMLP(2*self.state_dim + self.act_dim + self.t_feat_dim, 1, self.reward_hidden_sizes)
+            self.reconstruction_network = TupleMLP(self.state_dim + self.act_dim + self.t_feat_dim, self.state_dim, self.reconstruction_hidden_sizes)
 
         # transforms
         self.device = device
@@ -141,22 +145,23 @@ class QNetwork(nn.Module):
         s_in = (s - self.s_mean)/(self.s_sigma + 1e-6)
         a_in = (a - self.a_mean)/(self.a_sigma + 1e-6)
         t_in = (t_feat - self.t_feat_mean)/(self.t_feat_sigma + 1e-6)
-        # out = torch.cat([s_in, a_in, t_in], -1)
-        # for i in range(len(self.fc_layers)-1):
-        #     out = self.fc_layers[i](out)
-        #     out = self.nonlinearity(out)
-        # out = self.fc_layers[-1](out)
-        # # de-normalize the output with state transformations
-        # out = out * self.out_sigma + self.out_mean
-        x = torch.cat([s_in, a_in, t_in], -1)
-        shared_features = self.shared_network(x)
-        Q = self.q_network(shared_features)
 
-        if return_auxilary:
-            state_prime = self.reconstruction_network(shared_features)
-            reward = self.reward_network(shared_features)
-            return Q, state_prime, reward
+        if self.use_auxilary:
+            x = torch.cat([s_in, a_in, t_in], -1)
+            # shared_features = self.shared_network(x)
+
+            state_prime = self.reconstruction_network(x)
+            recon_and_x = torch.cat([x, state_prime], -1)
+            Q = self.q_network(recon_and_x)
+
+            if return_auxilary:
+                reward = self.reward_network(recon_and_x)
+                return Q, state_prime, reward
+            else:
+                return Q
         else:
+            x = torch.cat([s_in, a_in, t_in], -1)
+            Q = self.q_network(x)
             return Q
 
     def get_params(self):
@@ -199,13 +204,16 @@ class QPi:
 
         self.use_auxilary = use_auxilary
         
-        self.network = QNetwork(state_dim, act_dim, time_dim, hidden_size, seed=seed, device=device, shared_hidden_sizes=shared_hidden_sizes,
+        self.network = QNetwork(state_dim, act_dim, time_dim, hidden_size, seed=seed, device=device,
                 q_function_hidden_sizes=q_function_hidden_sizes, reconstruction_hidden_sizes=reconstruction_hidden_sizes,
-                reward_hidden_sizes=reward_hidden_sizes, nonlin = nonlin, d_shared = d_shared)
+                reward_hidden_sizes=reward_hidden_sizes, nonlin = nonlin, d_shared = d_shared, use_auxilary=use_auxilary)
 
         self.network.to(self.device)
 
-        self.target_network = QNetwork(state_dim, act_dim, time_dim, hidden_size, seed=seed, device=device)
+        self.target_network = QNetwork(state_dim, act_dim, time_dim, hidden_size, seed=seed, device=device,
+                q_function_hidden_sizes=q_function_hidden_sizes, reconstruction_hidden_sizes=reconstruction_hidden_sizes,
+                reward_hidden_sizes=reward_hidden_sizes, nonlin = nonlin, d_shared = d_shared, use_auxilary=use_auxilary)
+
         self.target_network = self.target_network.to(self.device)
         self.target_network.set_params(self.network.get_params())
 
@@ -275,7 +283,7 @@ class QPi:
         if self.use_mu_approx:
             if type(s) == np.ndarray:
                 s = torch.from_numpy(s).float()
-            s = s.to('cpu')
+            s = s.to(self.policy.device)
             mu = self.policy.model.forward(s)
             Q = self.forward(s, mu, t, target_network)
             return [mu, Q, Q]
@@ -285,6 +293,8 @@ class QPi:
             values = torch.zeros((n, 1), device=self.device)
             actions = []
             Qss = []
+
+            # TODO: do this all in one forward pass?
             for _ in range(self.num_value_actions):
                 if type(s) == torch.Tensor: # TODO: keep as tensor. requires some code refactor
                     s = s.detach().cpu().numpy()
@@ -296,7 +306,7 @@ class QPi:
                 Qss.append(Qs)
             values /= self.num_value_actions
 
-            return [actions, Qss, values]
+            return [actions, torch.cat(Qss), values]
 
     def compute_bellman_targets(self, idx, *args, **kwargs):
         # For the states with index in the buffer given by idx, compute the Bellman targets
@@ -322,17 +332,29 @@ class QPi:
             recon_losses = []
             reward_losses = []
 
+        compute_bellman_targets_time = 0.0
+        forward_time = 0.0
+        auxilary_time = 0.0
+        update_time = 0.0
+
         for _ in range(self.num_fit_iters):
             n = self.buffer['observations'].shape[0]
             idx = np.random.permutation(n)[:self.batch_size]
+            start = time.time()
             targets = self.compute_bellman_targets(idx).detach()
+            compute_bellman_targets_time += time.time() - start
             s = self.buffer['observations'][idx]
             a = self.buffer['actions'][idx]
             t = self.buffer['time'][idx]
 
             if self.use_auxilary:
+                start = time.time()
                 Qs_hat, state_primes_hat, rewards_hat = self.forward(s, a, t, return_auxilary=True)
+                forward_time += time.time() - start
+
                 self.optimizer.zero_grad()
+
+                start = time.time()
 
                 bellman_loss = self.loss_fn(Qs_hat, targets)
 
@@ -353,33 +375,58 @@ class QPi:
                     bellman_losses.append(bellman_loss.item())
                     recon_losses.append(reconstruction_loss.item())
                     reward_losses.append(reward_loss.item())
+                
+                auxilary_time += time.time() - start
             else:
                 preds = self.forward(s, a, t)
                 self.optimizer.zero_grad()
                 loss = self.loss_fn(preds, targets)
-            losses.append(loss.item())
 
+            losses.append(loss.item())
+            start = time.time()
             loss.backward()
             self.optimizer.step()
+            update_time += time.time() - start
+
+        if PRINT_TIMES:
+            print('compute_bellman_targets_time', compute_bellman_targets_time)
+            print('forward_time', forward_time)
+            print('auxilary_time', auxilary_time)
+            print('update_time', update_time)
 
         if all_losses:
             return losses, bellman_losses, recon_losses, reward_losses
         else:
             return losses
 
-    def bellman_update(self, all_losses=False):
+    def bellman_update(self, all_losses=False, eval_paths=None):
         # This function should perform the bellman updates (i.e. fit targets, sync networks, fit targets again ...)
+
+
         total_losses = []
         bellman_losses = []
         reconstruction_losses = []
         reward_losses = []
-        start = time.time()
+        all_start = time.time()
+
+        eval_mse_1 = []
+        eval_mse_end = []
+
+        set_param_time = 0.0
+        fit_targets_time = 0.0
+
+
         for bellman_iter in tqdm(range(self.num_bellman_iters)):
             # sync the learner and target networks
+            start = time.time()
             self.target_network.set_params(self.network.get_params())
+            set_param_time += time.time() - start
             # make network approximate Bellman targets
             
+            start = time.time()
             ret = self.fit_targets(all_losses=all_losses)
+            fit_targets_time += time.time() - start
+
             if all_losses:
                 losses, bellman_loss, reconstruction_loss, reward_loss = ret
                 total_losses.append(np.mean(losses))
@@ -387,11 +434,30 @@ class QPi:
                 reward_losses.append(np.mean(reward_loss))
             else:
                 bellman_loss = ret
-            bellman_losses.append(np.mean(bellman_loss))
 
-        update_time = time.time() - start
+            if eval_paths:
+                pred_1, mc_1 = evaluate_n_step(1, self.gamma, eval_paths, self)
+                pred_end, mc_end = evaluate_start_end(self.gamma, eval_paths, self)
+
+                eval_mse_1.append(mse(pred_1, mc_1))
+                eval_mse_end.append(mse(pred_end, mc_end))
+
+            bellman_losses.append(np.mean(bellman_loss))
+    
+        if PRINT_TIMES:
+            print('set_param_time', set_param_time)
+            print('fit_targets_time', fit_targets_time)
+
+        update_time = time.time() - all_start
+
+        
 
         if all_losses:
-            return total_losses, bellman_losses, reconstruction_losses, reward_losses, update_time
+            ret_tuple = total_losses, bellman_losses, reconstruction_losses, reward_losses, update_time
         else:
-            return bellman_losses, update_time
+            ret_tuple = bellman_losses, update_time
+
+        if eval_paths:
+            return ret_tuple + (eval_mse_1, eval_mse_end)
+        else:
+            return ret_tuple

@@ -107,6 +107,19 @@ class MLP:
         else:
             return action
 
+    def get_action_pytorch(self, observation, mean_action=False):
+        """
+            assumes input is a torch tensor on the correct device
+            returns a torch tensor
+        """
+        means = self.model(observation)
+        if mean_action:
+            return means
+        else:
+            noise = np.exp(self.log_std_val) * torch.randn(observation.shape[0], self.m)
+            action = means + noise
+            return action
+
     def mean_LL(self, observations, actions, model=None, log_std=None):
         model = self.model if model is None else model
         log_std = self.log_std if log_std is None else log_std

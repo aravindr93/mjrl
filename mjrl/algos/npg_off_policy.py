@@ -3,12 +3,12 @@ from mjrl.algos.npg_cg import NPG
 from mjrl.utils.replay_buffer import TrajectoryReplayBuffer
 from mjrl.utils.networks import QNetwork
 from mjrl.utils.cg_solve import cg_solve
+from mjrl.utils.evaluate_q_function import evaluate_n_step, evaluate_start_end, mse
 
 import mjrl.samplers.core as trajectory_sampler
 import mjrl.utils.process_samples as process_samples
 import numpy as np
 import time
-# TODO: logging
 
 class NPGOffPolicy(NPG):
 
@@ -82,14 +82,17 @@ class NPGOffPolicy(NPG):
         reconstruction_losses = []
         reward_losses = []
         total_update_time = 0.0
+        update_policy_time = 0.0
         for k in range(self.num_policy_updates):
             # fit the Q function
             # losses, btime = self.baseline.bellman_update()
             total_loss, bellman_loss, reconstruction_loss, \
                 reward_loss, update_time = self.baseline.bellman_update(all_losses=True)
             # update the policy
+            start = time.time()
             stat = self.update_policy(paths, self.fit_on_policy and k == 0)
-
+            update_policy_time += time.time() - start
+            
             update_stats.append(stat)
             total_losses.append(total_loss)
             bellman_losses.append(bellman_loss)
@@ -110,7 +113,8 @@ class NPGOffPolicy(NPG):
             self.summary_writer.add_scalar('StdReturn/train', std_return, iteration)
 
             self.summary_writer.add_scalar('BufferSize', self.baseline.buffer['observations'].shape[0], iteration)
-            self.summary_writer.add_scalar('BellmanUpdateTime', total_update_time, iteration)
+            self.summary_writer.add_scalar('Time/BellmanUpdate', total_update_time, iteration)
+            self.summary_writer.add_scalar('Time/PolicyUpdate', update_policy_time, iteration)
 
             total_means = []
             bellman_means = []
@@ -149,7 +153,12 @@ class NPGOffPolicy(NPG):
             for i, std in enumerate(stds):
                 self.summary_writer.add_scalar('PolicyStd/std_{}'.format(i), std, iteration)
 
-            # TODO: log the mse between returns and predicted Qs
+            # mse between predicted q and mc rollouts
+            pred_1, mc_1 = evaluate_n_step(1, gamma, paths, self.baseline)
+            pred_end, mc_end = evaluate_start_end(gamma, paths, self.baseline)
+
+            self.summary_writer.add_scalar('QFunctionMCMSE_single', mse(pred_1, mc_1), iteration)
+            self.summary_writer.add_scalar('QFunctionMCMSE_end', mse(pred_end, mc_end), iteration)
 
         return [mean_return, std_return, min_return, max_return]
 
@@ -235,11 +244,32 @@ class NPGOffPolicy(NPG):
         return observations, actions, weights
     
     def process_replay(self):
+
+        # TODO: check which is faster
+
         samples = self.baseline.buffer.get_sample(self.num_update_states)
+
+        start_cpu = time.time()
+
         observations = samples['observations'].to('cpu').numpy() # TODO: don't convert to/from numpy
         times = samples['time'].to('cpu').numpy()
-        actions = self.policy.get_action_batch(observations) 
+        actions = self.policy.get_action_batch(observations)
         Qs = self.baseline.predict(observations, actions, times)
         _, _, Vs = self.baseline.compute_average_value(observations, times)
         weights = Qs - Vs.detach().cpu().numpy()
-        return observations, actions, weights
+        # return observations, actions, weights
+
+        end_cpu = time.time()
+
+        observations = samples['observations']
+        times = samples['time']
+        actions = self.policy.get_action_pytorch(observations)
+        Qs = self.baseline.forward(observations, actions, times)
+        _, _, Vs = self.baseline.compute_average_value(observations, times)
+        weights = Qs - Vs
+
+        end_gpu = time.time()
+
+        print('gpu', end_gpu - end_cpu, 'cpu', end_cpu - start_cpu)
+
+        return weights.detach().cpu().numpy()

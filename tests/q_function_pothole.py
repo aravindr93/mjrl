@@ -12,7 +12,10 @@ from mjrl.utils.process_samples import compute_returns
 
 import matplotlib.pyplot as plt
 
-policy_dir = 'pothole_point_mass_exp1/iterations/best_policy.pickle'
+from mjrl.utils.evaluate_q_function import evaluate_n_step, evaluate_start_end, mse
+
+policy_dir = 'pothole_point_mass_exp1/iterations/policy_10.pickle'
+# policy_dir = 'pothole_point_mass_exp1/iterations/best_policy.pickle'
 env_name = 'mjrl_pothole_point_mass-v0'
 
 # policy_dir = 'point_mass_exp1/iterations/best_policy.pickle'
@@ -22,13 +25,13 @@ K_train = 1000
 K_test = 100
 e = GymEnv(env_name)
 time_dim = 3
-hidden_size = (512, 512, 512)
+hidden_size = (256, 256)
 fit_lr = 1e-3
 gamma = 0.96
 batch_size = 64
 
 num_fit_iters = 25
-num_evals = 4
+num_evals = 2
 base_seed = 2
 
 policy = pickle.load(open(policy_dir, 'rb'))
@@ -39,8 +42,15 @@ compute_returns(test_paths, gamma)
 replay_buffer = TrajectoryReplayBuffer()
 replay_buffer.push_many(train_paths)
 
-q_function = QPi(policy, e.observation_dim, e.action_dim, time_dim, e.horizon, replay_buffer,
-                    hidden_size=hidden_size, fit_lr=fit_lr, gamma=gamma, batch_size=batch_size, num_fit_iters=num_fit_iters)
+# q_function = QPi(policy, e.observation_dim, e.action_dim, time_dim, e.horizon, replay_buffer,
+#                     hidden_size=hidden_size, fit_lr=fit_lr, gamma=gamma, batch_size=batch_size, num_fit_iters=num_fit_iters)
+
+
+q_function = QPi(policy, e.observation_dim, e.action_dim, 3, e.horizon, replay_buffer,
+                batch_size=512, gamma=gamma, device='cuda',
+                num_bellman_iters=30, num_fit_iters=300, fit_lr=1e-3,
+                use_mu_approx=False, num_value_actions=5)
+
 
 def evaluate(q_function, paths):
     # states = q_function.buffer['observations']
@@ -74,7 +84,7 @@ def plot_vs(q_function, t=0, title="figure"):
     # return xy, values
     fig, ax = plt.subplots()
     ax.set_title(title)
-    c = ax.pcolormesh(x, y, values[1].cpu().detach().numpy().reshape(sqrtn,sqrtn))
+    c = ax.pcolormesh(x, y, values[2].cpu().detach().numpy().reshape(sqrtn,sqrtn))
     fig.colorbar(c, ax=ax)
 
 def plot_v_path(paths, t=0, title="figure"):
@@ -101,7 +111,7 @@ all_losses = []
 train_eval_scores = []
 test_eval_scores = []
 for eval_num in range(num_evals):
-    losses = q_function.update_network()
+    losses, _ = q_function.bellman_update()
     train_eval_score = evaluate(q_function, train_paths)
     test_eval_score = evaluate(q_function, test_paths)
     train_eval_scores.append(train_eval_score)
@@ -113,6 +123,16 @@ for eval_num in range(num_evals):
 
 print('best train', np.min(train_eval_scores))
 print('best test', np.min(test_eval_scores))
+
+train_pred_1, train_mc_1 = evaluate_n_step(1, gamma, train_paths, q_function)
+test_pred_1, test_mc_1 = evaluate_n_step(1, gamma, test_paths, q_function)
+train_pred_end, train_mc_end = evaluate_start_end(gamma, train_paths, q_function)
+test_pred_end, test_mc_end = evaluate_start_end(gamma, test_paths, q_function)
+
+print('Train 1 step MSE', mse(train_pred_1, train_mc_1))
+print('Test 1 step MSE', mse(test_pred_1, test_mc_1))
+print('Train end step MSE', mse(train_pred_end, train_mc_end))
+print('Test end step MSE', mse(test_pred_end, test_mc_end))
 
 plt.figure('bellman losses')
 plt.plot(all_losses)
