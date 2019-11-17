@@ -9,7 +9,7 @@ import time as timer
 SEED = 500
 
 e = GymEnv('mjrl_point_mass-v0')
-policy = MLP(e.spec, hidden_sizes=(32, 32), seed=SEED, device='cuda')
+policy = MLP(e.spec, hidden_sizes=(256, 256), seed=SEED, device='cuda')
 baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=64, epochs=10, learn_rate=1e-3)
 agent = NPG(e, policy, baseline, normalized_step_size=0.05, seed=SEED, save_logs=True)
 

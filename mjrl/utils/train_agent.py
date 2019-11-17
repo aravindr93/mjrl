@@ -32,7 +32,6 @@ def train_agent(job_name, agent,
     os.chdir(job_name) # important! we are now in the directory to save data
     if os.path.isdir('iterations') == False: os.mkdir('iterations')
     if os.path.isdir('logs') == False and agent.save_logs == True: os.mkdir('logs')
-    import pdb; pdb.set_trace()
     best_policy = copy.deepcopy(agent.policy)
     best_perf = -1e8
     train_curve = best_perf*np.ones(niter)

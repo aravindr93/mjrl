@@ -36,7 +36,7 @@ class BatchREINFORCE:
         if save_logs: self.logger = DataLog()
 
     def CPI_surrogate(self, observations, actions, advantages):
-        adv_var = Variable(torch.from_numpy(advantages).float().to(self.policy.device), requires_grad=False)
+        adv_var = torch.from_numpy(advantages).float().to(self.policy.device)
         old_dist_info = self.policy.old_dist_info(observations, actions)
         new_dist_info = self.policy.new_dist_info(observations, actions)
         LR = self.policy.likelihood_ratio(new_dist_info, old_dist_info)
@@ -65,7 +65,6 @@ class BatchREINFORCE:
                    num_cpu='max',
                    env_kwargs=None,
                    ):
-
         # Clean up input arguments
         env = self.env.env_id if env is None else env
         if sample_mode != 'trajectories' and sample_mode != 'samples':
@@ -113,7 +112,6 @@ class BatchREINFORCE:
 
     # ----------------------------------------------------------
     def train_from_paths(self, paths):
-
         observations, actions, advantages, base_stats, self.running_score = self.process_paths(paths)
         if self.save_logs: self.log_rollout_statistics(paths)
 

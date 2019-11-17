@@ -33,13 +33,15 @@ class MLP:
         # make weights small
         for param in list(self.model.parameters())[-2:]:  # only last layer
            param.data = 1e-2 * param.data
-        self.log_std = torch.ones(self.m, requires_grad=True).to(device) * init_log_std
+        self.log_std = torch.ones(self.m, requires_grad=True, device=device)
+        self.log_std.data *= init_log_std
         self.trainable_params = list(self.model.parameters()) + [self.log_std]
 
         # Old Policy network
         # ------------------------
         self.old_model = FCNetwork(self.n, self.m, hidden_sizes, device=device)
-        self.old_log_std = torch.ones(self.m, requires_grad=True).to(device) * init_log_std
+        self.old_log_std = torch.ones(self.m, requires_grad=True, device=device)
+        self.old_log_std.data *= init_log_std
         self.old_params = list(self.old_model.parameters()) + [self.old_log_std]
         for idx, param in enumerate(self.old_params):
             param.data = self.trainable_params[idx].data.clone()
@@ -68,7 +70,7 @@ class MLP:
             for idx, param in enumerate(self.trainable_params):
                 vals = new_params[current_idx:current_idx + self.param_sizes[idx]]
                 vals = vals.reshape(self.param_shapes[idx])
-                param.data = torch.from_numpy(vals).float()
+                param.data = torch.from_numpy(vals).float().to(self.device)
                 current_idx += self.param_sizes[idx]
             # clip std at minimum value
             self.trainable_params[-1].data = \
@@ -80,7 +82,7 @@ class MLP:
             for idx, param in enumerate(self.old_params):
                 vals = new_params[current_idx:current_idx + self.param_sizes[idx]]
                 vals = vals.reshape(self.param_shapes[idx])
-                param.data = torch.from_numpy(vals).float()
+                param.data = torch.from_numpy(vals).float().to(self.device)
                 current_idx += self.param_sizes[idx]
             # clip std at minimum value
             self.old_params[-1].data = \

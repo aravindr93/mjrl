@@ -60,7 +60,7 @@ class NPG(BatchREINFORCE):
 
     def HVP(self, observations, actions, vector, regu_coef=None):
         regu_coef = self.FIM_invert_args['damping'] if regu_coef is None else regu_coef
-        vec = Variable(torch.from_numpy(vector).float(), requires_grad=False)
+        vec = torch.from_numpy(vector).float().to(self.policy.device)
         if self.hvp_subsample is not None and self.hvp_subsample < 0.99:
             num_samples = observations.shape[0]
             rand_idx = np.random.choice(num_samples, size=int(self.hvp_subsample*num_samples))
@@ -76,7 +76,7 @@ class NPG(BatchREINFORCE):
         flat_grad = torch.cat([g.contiguous().view(-1) for g in grad_fo])
         h = torch.sum(flat_grad*vec)
         hvp = torch.autograd.grad(h, self.policy.trainable_params)
-        hvp_flat = np.concatenate([g.contiguous().view(-1).data.numpy() for g in hvp])
+        hvp_flat = np.concatenate([g.contiguous().view(-1).data.cpu().numpy() for g in hvp])
         return hvp_flat + regu_coef*vector
 
     def build_Hvp_eval(self, inputs, regu_coef=None):
@@ -99,8 +99,8 @@ class NPG(BatchREINFORCE):
         # normalize inputs if necessary
         if self.input_normalization:
             data_in_shift, data_in_scale = np.mean(observations, axis=0), np.std(observations, axis=0)
-            pi_in_shift, pi_in_scale = self.policy.model.in_shift.data.numpy(), self.policy.model.in_scale.data.numpy()
-            pi_out_shift, pi_out_scale = self.policy.model.out_shift.data.numpy(), self.policy.model.out_scale.data.numpy()
+            pi_in_shift, pi_in_scale = self.policy.model.in_shift.data.cpu().numpy(), self.policy.model.in_scale.data.cpu().numpy()
+            pi_out_shift, pi_out_scale = self.policy.model.out_shift.data.cpu().numpy(), self.policy.model.out_scale.data.cpu().numpy()
             pi_in_shift = self.input_normalization * pi_in_shift + (1-self.input_normalization) * data_in_shift
             pi_in_scale = self.input_normalization * pi_in_scale + (1-self.input_normalization) * data_in_scale
             self.policy.model.set_transformations(pi_in_shift, pi_in_scale, pi_out_shift, pi_out_scale)
@@ -136,8 +136,8 @@ class NPG(BatchREINFORCE):
         curr_params = self.policy.get_param_values()
         new_params = curr_params + alpha * npg_grad
         self.policy.set_param_values(new_params, set_new=True, set_old=False)
-        surr_after = self.CPI_surrogate(observations, actions, advantages).data.numpy().ravel()[0]
-        kl_dist = self.kl_old_new(observations, actions).data.numpy().ravel()[0]
+        surr_after = self.CPI_surrogate(observations, actions, advantages).data.cpu().numpy().ravel()[0]
+        kl_dist = self.kl_old_new(observations, actions).data.cpu().numpy().ravel()[0]
         self.policy.set_param_values(new_params, set_new=True, set_old=True)
 
         # Log information
