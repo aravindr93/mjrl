@@ -21,14 +21,14 @@ policy = MLP(e.spec, hidden_sizes=(64, 64), seed=SEED, init_log_std=-0.5)
 
 replay_buffer = TrajectoryReplayBuffer()
 
-gamma = 0.9
+gamma = 0.98
 q_function = QPi(policy, e.observation_dim, e.action_dim, 3, e.horizon, replay_buffer,
                 batch_size=512, gamma=gamma, device='cuda',
-                num_bellman_iters=10, num_fit_iters=300, fit_lr=1e-3,
+                num_bellman_iters=30, num_fit_iters=300, fit_lr=1e-3,
                 use_mu_approx=True, num_value_actions=5)
 
-agent = NPGOffPolicy(e, policy, q_function, normalized_step_size=0.05, num_policy_updates=2,
-                num_update_states=1000*5, num_update_actions=15, fit_on_policy=True, fit_off_policy=True,
+agent = NPGOffPolicy(e, policy, q_function, normalized_step_size=0.05, num_policy_updates=1,
+                num_update_states=1000*5, num_update_actions=15, fit_on_policy=True, fit_off_policy=False,
                 summary_writer=writer)
 
 ts=timer.time()

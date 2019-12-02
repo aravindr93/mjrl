@@ -5,19 +5,25 @@ from mjrl.utils.networks import QPi
 import mjrl.samplers.core as trajectory_sampler
 
 
-def train_and_evaluate(policy, replay_buffer, env, gamma, eval_paths, num_traj=100, print_info=False, use_aux = False, base_seed=123, **kwargs):
+def train_and_evaluate(policy, replay_buffer, env, gamma, eval_paths, init_function=None, num_traj=100, print_info=False, use_aux = False, base_seed=123, **kwargs):
     """
     Given paths and policy, train and evaluate the q_function
     """
 
     q_function = QPi(policy, env.observation_dim, env.action_dim, 3, env.horizon, replay_buffer,
         gamma=gamma, use_auxilary=use_aux, **kwargs)
+    
+    if init_function:
+        # q_function.network.set_params(init_function.network.get_params())
+        # q_function.target_network.set_params(init_function.target_network.get_params())
+        q_function.network.set_q_params(init_function.network.get_q_params())
+        q_function.target_network.set_q_params(init_function.target_network.get_q_params())
 
     if use_aux:
         total_losses, bellman_losses, reconstruction_losses, reward_losses, \
-            update_time, eval_mse_1, eval_mse_end = q_function.bellman_update(all_losses=use_aux, eval_paths=eval_paths)
+            update_time, eval_mse_1, eval_mse_end, eval_mse_1_true, eval_mse_end_true = q_function.bellman_update(all_losses=use_aux, eval_paths=eval_paths)
     else:
-        bellman_losses, update_time, eval_mse_1, eval_mse_end = q_function.bellman_update(all_losses=use_aux, eval_paths=eval_paths)
+        bellman_losses, update_time, eval_mse_1, eval_mse_end, eval_mse_1_true, eval_mse_end_true = q_function.bellman_update(all_losses=use_aux, eval_paths=eval_paths)
         reconstruction_losses = [0.0] * len(bellman_losses)
         reward_losses = [0.0] * len(bellman_losses)
         total_losses = bellman_losses
@@ -58,7 +64,9 @@ def train_and_evaluate(policy, replay_buffer, env, gamma, eval_paths, num_traj=1
         'train_end_mse': train_end_mse,
         'test_end_mse': test_end_mse,
         'eval_mse_1': eval_mse_1,
-        'eval_mse_end': eval_mse_end
+        'eval_mse_end': eval_mse_end,
+        'eval_mse_1_true': eval_mse_1_true,
+        'eval_mse_end_true': eval_mse_end_true
     }
 
     return ret_dict, q_function

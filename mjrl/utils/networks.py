@@ -60,7 +60,7 @@ class QNetwork(nn.Module):
         self.set_transforms(transforms)
 
         # TODO: commenting this out for now, but should look at initialization 
-        # for param in list(self.parameters())[-2:]:  # only last layer
+        # for param in list(self.q_network.parameters())[-2:]:  # only last layer
         #     param.data = 1e-2 * param.data
 
         self.to(self.device)
@@ -178,6 +178,14 @@ class QNetwork(nn.Module):
         for idx, p in enumerate(self.parameters()):
             p.data = new_weights[idx]
         self.set_transforms(new_params['transforms'])
+    
+    def get_q_params(self):
+        network_weights = [p.data for p in self.q_network.parameters()]
+        return network_weights
+
+    def set_q_params(self, new_params):
+        for idx, p in enumerate(self.q_network.parameters()):
+            p.data = new_params[idx]
 
 
 class QPi:
@@ -283,7 +291,7 @@ class QPi:
         if self.use_mu_approx:
             if type(s) == np.ndarray:
                 s = torch.from_numpy(s).float()
-            s = s.to(self.policy.device)
+            # s = s.to(self.policy.device) # TODO: uncomment this later
             mu = self.policy.model.forward(s)
             Q = self.forward(s, mu, t, target_network)
             return [mu, Q, Q]
@@ -412,9 +420,39 @@ class QPi:
         eval_mse_1 = []
         eval_mse_end = []
 
+        eval_mse_1_true = []
+        eval_mse_end_true = []
+
         set_param_time = 0.0
         fit_targets_time = 0.0
 
+        # linear gamma schdule 
+        gamma_0 = 0.95
+        gamma = self.gamma
+        num_schedule = 30
+        # def calc_gamma(i):
+        #     if i < num_schedule:
+        #         return (gamma - gamma_0) / (num_schedule - 1) * i + gamma_0
+        #     else:
+        #         return gamma
+        #     # return gamma
+
+        # epsilon = 1e-6
+        # b = (self.num_bellman_iters / (np.log(1-gamma_0/gamma) / np.log(epsilon/gamma) - 1)) + self.num_bellman_iters
+        # a = np.log(epsilon / gamma) / (b-self.num_bellman_iters)
+        # def calc_gamma(i):
+        #     return gamma * (1 - np.exp(-a * (i - b)))
+
+        # H_0 = 1 / (1 - gamma_0)
+        # H = 1/(1-gamma)
+        # def calc_gamma(i):
+        #     if i < num_schedule:
+        #         h = (H - H_0) / 30 * i + H_0
+        #         return (h-1) / h
+        #     return gamma
+
+        def calc_gamma(i):
+            return gamma
 
         for bellman_iter in tqdm(range(self.num_bellman_iters)):
             # sync the learner and target networks
@@ -422,6 +460,9 @@ class QPi:
             self.target_network.set_params(self.network.get_params())
             set_param_time += time.time() - start
             # make network approximate Bellman targets
+
+            self.gamma = calc_gamma(bellman_iter)
+            print('gamma', self.gamma)
             
             start = time.time()
             ret = self.fit_targets(all_losses=all_losses)
@@ -439,8 +480,20 @@ class QPi:
                 pred_1, mc_1 = evaluate_n_step(1, self.gamma, eval_paths, self)
                 pred_end, mc_end = evaluate_start_end(self.gamma, eval_paths, self)
 
+                self.gamma = gamma
+                pred_1_true, mc_1_true = evaluate_n_step(1, self.gamma, eval_paths, self)
+                pred_end_true, mc_end_true = evaluate_start_end(self.gamma, eval_paths, self)
+
                 eval_mse_1.append(mse(pred_1, mc_1))
                 eval_mse_end.append(mse(pred_end, mc_end))
+
+                eval_mse_1_true.append(mse(pred_1_true, mc_1_true))
+                eval_mse_end_true.append(mse(pred_end_true, mc_end_true))
+
+                print('eval_mse_1', eval_mse_1[-1])
+                print('eval_mse_end', eval_mse_end[-1])
+                print('eval_mse_1_true', eval_mse_1_true[-1])
+                print('eval_mse_end_true', eval_mse_end_true[-1])
 
             bellman_losses.append(np.mean(bellman_loss))
     
@@ -450,7 +503,7 @@ class QPi:
 
         update_time = time.time() - all_start
 
-        
+        self.gamma = gamma
 
         if all_losses:
             ret_tuple = total_losses, bellman_losses, reconstruction_losses, reward_losses, update_time
@@ -458,6 +511,6 @@ class QPi:
             ret_tuple = bellman_losses, update_time
 
         if eval_paths:
-            return ret_tuple + (eval_mse_1, eval_mse_end)
+            return ret_tuple + (eval_mse_1, eval_mse_end, eval_mse_1_true, eval_mse_end_true)
         else:
             return ret_tuple
