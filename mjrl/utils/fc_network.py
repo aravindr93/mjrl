@@ -10,7 +10,8 @@ class FCNetwork(nn.Module):
                  in_shift = None,
                  in_scale = None,
                  out_shift = None,
-                 out_scale = None):
+                 out_scale = None, 
+                 device='cpu'):
         super(FCNetwork, self).__init__()
 
         self.obs_dim = obs_dim
@@ -18,11 +19,14 @@ class FCNetwork(nn.Module):
         assert type(hidden_sizes) == tuple
         self.layer_sizes = (obs_dim, ) + hidden_sizes + (act_dim, )
         self.set_transformations(in_shift, in_scale, out_shift, out_scale)
+        self.device = device
 
         # hidden layers
-        self.fc_layers = nn.ModuleList([nn.Linear(self.layer_sizes[i], self.layer_sizes[i+1]) \
+        self.fc_layers = nn.ModuleList([nn.Linear(self.layer_sizes[i], self.layer_sizes[i+1]).to(self.device) \
                          for i in range(len(self.layer_sizes) -1)])
         self.nonlinearity = torch.relu if nonlinearity == 'relu' else torch.tanh
+
+        self.to(self.device)
 
     def set_transformations(self, in_shift=None, in_scale=None, out_shift=None, out_scale=None):
         # store native scales that can be used for resets
@@ -37,12 +41,7 @@ class FCNetwork(nn.Module):
         self.out_scale = torch.from_numpy(np.float32(out_scale)) if out_scale is not None else torch.ones(self.act_dim)
 
     def forward(self, x):
-        # TODO(Aravind): Remove clamping to CPU
-        # This is a temp change that should be fixed shortly
-        if x.is_cuda:
-            out = x.to('cpu')
-        else:
-            out = x
+        out = x.to(self.device)
         out = (out - self.in_shift)/(self.in_scale + 1e-8)
         for i in range(len(self.fc_layers)-1):
             out = self.fc_layers[i](out)
@@ -50,3 +49,12 @@ class FCNetwork(nn.Module):
         out = self.fc_layers[-1](out)
         out = out * self.out_scale + self.out_shift
         return out
+
+    def to(self, device):
+        self.device = device
+        self.in_shift = self.in_shift.to(self.device)
+        self.in_scale = self.in_scale.to(self.device)
+        self.out_shift = self.out_shift.to(self.device)
+        self.out_scale = self.out_scale.to(self.device)
+        self=super().to(device)
+        return self

@@ -36,7 +36,7 @@ class BatchREINFORCE:
         if save_logs: self.logger = DataLog()
 
     def CPI_surrogate(self, observations, actions, advantages):
-        adv_var = Variable(torch.from_numpy(advantages).float(), requires_grad=False)
+        adv_var = torch.from_numpy(advantages).float().to(self.policy.device)
         old_dist_info = self.policy.old_dist_info(observations, actions)
         new_dist_info = self.policy.new_dist_info(observations, actions)
         LR = self.policy.likelihood_ratio(new_dist_info, old_dist_info)
@@ -52,7 +52,7 @@ class BatchREINFORCE:
     def flat_vpg(self, observations, actions, advantages):
         cpi_surr = self.CPI_surrogate(observations, actions, advantages)
         vpg_grad = torch.autograd.grad(cpi_surr, self.policy.trainable_params)
-        vpg_grad = np.concatenate([g.contiguous().view(-1).data.numpy() for g in vpg_grad])
+        vpg_grad = np.concatenate([g.contiguous().view(-1).data.cpu().numpy() for g in vpg_grad])
         return vpg_grad
 
     # ----------------------------------------------------------
@@ -65,7 +65,6 @@ class BatchREINFORCE:
                    num_cpu='max',
                    env_kwargs=None,
                    ):
-
         # Clean up input arguments
         env = self.env.env_id if env is None else env
         if sample_mode != 'trajectories' and sample_mode != 'samples':
@@ -113,7 +112,6 @@ class BatchREINFORCE:
 
     # ----------------------------------------------------------
     def train_from_paths(self, paths):
-
         observations, actions, advantages, base_stats, self.running_score = self.process_paths(paths)
         if self.save_logs: self.log_rollout_statistics(paths)
 
@@ -122,7 +120,7 @@ class BatchREINFORCE:
 
         # Optimization algorithm
         # --------------------------
-        surr_before = self.CPI_surrogate(observations, actions, advantages).data.numpy().ravel()[0]
+        surr_before = self.CPI_surrogate(observations, actions, advantages).data.cpu().numpy().ravel()[0]
 
         # VPG
         ts = timer.time()
@@ -138,7 +136,7 @@ class BatchREINFORCE:
             for ctr in range(max_ctr):
                 new_params = curr_params + alpha * vpg_grad
                 self.policy.set_param_values(new_params, set_new=True, set_old=False)
-                kl_dist = self.kl_old_new(observations, actions).data.numpy().ravel()[0]
+                kl_dist = self.kl_old_new(observations, actions).data.cpu().numpy().ravel()[0]
                 if kl_dist <= self.desired_kl:
                     break
                 else:
@@ -149,8 +147,8 @@ class BatchREINFORCE:
             new_params = curr_params + self.alpha * vpg_grad
 
         self.policy.set_param_values(new_params, set_new=True, set_old=False)
-        surr_after = self.CPI_surrogate(observations, actions, advantages).data.numpy().ravel()[0]
-        kl_dist = self.kl_old_new(observations, actions).data.numpy().ravel()[0]
+        surr_after = self.CPI_surrogate(observations, actions, advantages).data.cpu().numpy().ravel()[0]
+        kl_dist = self.kl_old_new(observations, actions).data.cpu().numpy().ravel()[0]
         self.policy.set_param_values(new_params, set_new=True, set_old=True)
 
         # Log information
