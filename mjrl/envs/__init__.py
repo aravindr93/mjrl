@@ -16,8 +16,15 @@ register(
     max_episode_steps=500,
 )
 
+register(
+    id='mjrl_humanoid_3-v0',
+    entry_point='mjrl.envs:Humanoid3Env',
+    max_episode_steps=1000,
+)
+
 from mjrl.envs.mujoco_env import MujocoEnv
 # ^^^^^ so that user gets the correct error
 # message if mujoco is not installed correctly
 from mjrl.envs.point_mass import PointMassEnv
 from mjrl.envs.swimmer import SwimmerEnv
+from mjrl.envs.humanoid_3 import Humanoid3Env

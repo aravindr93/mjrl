@@ -41,7 +41,7 @@ class MujocoEnv(gym.Env):
         self.init_qvel = self.data.qvel.ravel().copy()
         try:
             observation, _reward, done, _info = self.step(np.zeros(self.model.nu))
-        except:
+        except NotImplementedError:
             observation, _reward, done, _info = self._step(np.zeros(self.model.nu))
         assert not done
         self.obs_dim = np.sum([o.size for o in observation]) if type(observation) is tuple else observation.size
