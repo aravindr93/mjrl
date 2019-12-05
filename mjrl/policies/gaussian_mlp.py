@@ -2,7 +2,7 @@ import numpy as np
 from mjrl.utils.fc_network import FCNetwork
 import torch
 
-class MLP:
+class MLP(torch.nn.Module):
     def __init__(self, env_spec,
                  hidden_sizes=(64,64),
                  min_log_std=-3,
@@ -16,6 +16,7 @@ class MLP:
         :param init_log_std: initial log standard deviation
         :param seed: random seed
         """
+        super(MLP, self).__init__()
         self.n = env_spec.observation_dim  # number of states
         self.m = env_spec.action_dim  # number of actions
         self.min_log_std = min_log_std
