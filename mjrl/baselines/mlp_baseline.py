@@ -15,20 +15,23 @@ import pickle
 
 class MLPBaseline:
     def __init__(self, env_spec, inp_dim=None, inp='obs', learn_rate=1e-3, reg_coef=0.0,
-                 batch_size=64, epochs=1, use_gpu=False):
+                 batch_size=64, epochs=1, use_gpu=False, hidden_sizes=(128, 128)):
         self.n = inp_dim if inp_dim is not None else env_spec.observation_dim
         self.batch_size = batch_size
         self.epochs = epochs
         self.reg_coef = reg_coef
         self.use_gpu = use_gpu
         self.inp = inp
+        self.hidden_sizes = hidden_sizes
 
         self.model = nn.Sequential()
-        self.model.add_module('fc_0', nn.Linear(self.n+4, 128))
-        self.model.add_module('relu_0', nn.ReLU())
-        self.model.add_module('fc_1', nn.Linear(128, 128))
-        self.model.add_module('relu_1', nn.ReLU())
-        self.model.add_module('fc_2', nn.Linear(128, 1))
+        layer_sizes = (self.n + 4, ) + hidden_sizes + (1, )
+        for i in range(len(layer_sizes) - 1):
+            layer_id = 'fc_' + str(i)
+            relu_id = 'relu_' + str(i)
+            self.model.add_module(layer_id, nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+            if i != len(layer_sizes) - 2:
+                self.model.add_module(relu_id, nn.ReLU())
 
         if self.use_gpu:
             self.model.cuda()
