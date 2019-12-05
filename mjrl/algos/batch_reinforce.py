@@ -23,7 +23,9 @@ class BatchREINFORCE:
                  learn_rate=0.01,
                  seed=123,
                  desired_kl=None,
-                 save_logs=False):
+                 save_logs=False,
+                 **kwargs
+                 ):
 
         self.env = env
         self.policy = policy

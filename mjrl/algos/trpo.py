@@ -29,7 +29,9 @@ class TRPO(NPG):
                  hvp_sample_frac=1.0,
                  seed=123,
                  save_logs=False,
-                 normalized_step_size=0.01):
+                 normalized_step_size=0.01,
+                 **kwargs
+                 ):
         """
         All inputs are expected in mjrl's format unless specified
         :param normalized_step_size: Normalized step size (under the KL metric). Twice the desired KL distance
