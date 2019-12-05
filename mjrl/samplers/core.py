@@ -7,6 +7,7 @@ import multiprocessing as mp
 import time as timer
 logging.disable(logging.CRITICAL)
 
+import copy
 
 # Single core rollout to sample trajectories
 # =======================================================
@@ -29,7 +30,6 @@ def do_rollout(
     :param env_kwargs:  dictionary with parameters, will be passed to env generator
     :return:
     """
-
     # get the correct env behavior
     if type(env) == str:
         env = GymEnv(env)
@@ -129,8 +129,24 @@ def sample_paths(
     # do multiprocessing otherwise
     paths_per_cpu = int(np.ceil(num_traj/num_cpu))
     input_dict_list= []
+
+    if policy.device is not 'cpu':
+        pol_copy = copy.deepcopy(policy)
+        pol_copy.to('cpu')
+
+        for param in pol_copy.parameters():
+            param.requires_grad = False
+
+        pol_copy.log_std = pol_copy.log_std.detach()
+        pol_copy.old_log_std = pol_copy.old_log_std.detach()
+        pol_copy.trainable_params = [x.detach() for x in pol_copy.trainable_params]
+        pol_copy.old_params = [x.detach() for x in pol_copy.old_params]
+        rollout_pol = pol_copy
+    else:
+        rollout_pol = policy
+
     for i in range(num_cpu):
-        input_dict = dict(num_traj=paths_per_cpu, env=env, policy=policy,
+        input_dict = dict(num_traj=paths_per_cpu, env=env, policy=rollout_pol,
                           eval_mode=eval_mode, horizon=horizon,
                           base_seed=base_seed + i * paths_per_cpu,
                           env_kwargs=env_kwargs)
