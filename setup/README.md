@@ -26,11 +26,14 @@ $ conda env create -f setup/env.yml
 $ source activate mjrl-env
 $ pip install -e .
 ```
+- *NOTE 1:* If there are issues with install of pytorch, please follow instructions from the [pytorch website](https://pytorch.org/) to install it properly based on the specific version of CUDA (or CPU-only) you have.
+
+- *NOTE 2:* If you encounter a patchelf error in mujoco_py install, you can fix this with the following command when inside the anaconda env: `conda install -c anaconda patchelf`. See this [page](https://github.com/openai/mujoco-py/issues/147) for additional info.
 
 ## Mac OS
 
 - Download MuJoCo binaries from the official [website](http://www.mujoco.org/) and also obtain the license key.
-- Unzip the downloaded mjpro150 directory into `~/.mujoco/mujoco200` (rename unzipped directory to this), and place your license key (mjkey.txt) at `~/.mujoco/mjkey.txt`
+- Unzip the downloaded `mujoco200` directory into `~/.mujoco/mujoco200` (rename unzipped directory to this), and place your license key (mjkey.txt) at `~/.mujoco/mjkey.txt`.
 - Update `bashrc` by adding the following lines and source it
 ```
 export LD_LIBRARY_PATH="<path/to/.mujoco>/mujoco200/bin:$LD_LIBRARY_PATH"
@@ -43,6 +46,11 @@ $ conda env create -f setup/env.yml
 $ source activate mjrl-env
 $ pip install -e .
 ```
+
+- *NOTE 1:* If there are issues with install of pytorch, please follow instructions from the [pytorch website](https://pytorch.org/) to install it properly.
+
+- *NOTE 2:* If you encounter a patchelf error in mujoco_py install, you can fix this with the following command when inside the anaconda env: `conda install -c anaconda patchelf`. See this [page](https://github.com/openai/mujoco-py/issues/147) for additional info.
+
 
 ## Known Issues
 
@@ -58,7 +66,8 @@ $ sudo apt-get install libgl1-mesa-dev libgl1-mesa-glx libglew-dev libosmesa6-de
 
 - If conda environment creation gets interrupted for some reason, you can resume it with the following:
 ```
-$ conda env update -n mjrl-env -f setup/[mac,linux].yml
+$ conda env update -n mjrl-env -f setup/env.yml
 ```
 
 - GCC error in Mac OS: If you get a GCC error from mujoco-py, you can get the correct version mujoco-py expects with `brew install gcc --without-multilib`. This may require uninstalling other versions of GCC that may have been previously installed with `brew remove gcc@6` for example. You can see which brew packages were already installed with `brew list`.
+
