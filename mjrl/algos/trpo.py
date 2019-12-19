@@ -11,7 +11,7 @@ from torch.autograd import Variable
 import copy
 
 # samplers
-import mjrl.samplers.trajectory_sampler as trajectory_sampler
+import mjrl.samplers.core as trajectory_sampler
 import mjrl.samplers.batch_sampler as batch_sampler
 
 # utility functions
@@ -27,9 +27,11 @@ class TRPO(NPG):
                  kl_dist=0.01,
                  FIM_invert_args={'iters': 10, 'damping': 1e-4},
                  hvp_sample_frac=1.0,
-                 seed=None,
+                 seed=123,
                  save_logs=False,
-                 normalized_step_size=0.01):
+                 normalized_step_size=0.01,
+                 **kwargs
+                 ):
         """
         All inputs are expected in mjrl's format unless specified
         :param normalized_step_size: Normalized step size (under the KL metric). Twice the desired KL distance

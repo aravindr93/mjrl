@@ -1,12 +1,17 @@
+"""
+Wrapper around a gym env that provides convenience functions
+"""
+
 import gym
 import numpy as np
 
+
 class EnvSpec(object):
-    def __init__(self, obs_dim, act_dim, horizon, num_agents):
+    def __init__(self, obs_dim, act_dim, horizon):
         self.observation_dim = obs_dim
         self.action_dim = act_dim
         self.horizon = horizon
-        self.num_agents = num_agents
+
 
 class GymEnv(object):
     def __init__(self, env_name):
@@ -14,22 +19,23 @@ class GymEnv(object):
         self.env = env
         self.env_id = env.spec.id
 
-        self._horizon = env.spec.timestep_limit
+        try:
+            self._horizon = env.spec.max_episode_steps
+        except AttributeError:
+            self._horizon = env.spec._horizon
 
         try:
             self._action_dim = self.env.env.action_dim
         except AttributeError:
-            self._action_dim = self.env.env.action_space.shape[0]
-        
-        self._observation_dim = self.env.env.obs_dim
+            self._action_dim = self.env.action_space.shape[0]
 
         try:
-            self._num_agents = self.env.env.num_agents
+            self._observation_dim = self.env.env.obs_dim
         except AttributeError:
-            self._num_agents = 1
+            self._observation_dim = self.env.observation_space.shape[0]
 
         # Specs
-        self.spec = EnvSpec(self._observation_dim, self._action_dim, self._horizon, self._num_agents)
+        self.spec = EnvSpec(self._observation_dim, self._action_dim, self._horizon)
 
     @property
     def action_dim(self):
@@ -51,86 +57,123 @@ class GymEnv(object):
     def horizon(self):
         return self._horizon
 
-    def reset(self):
-        return self.env.reset()
+    def reset(self, seed=None):
+        try:
+            self.env._elapsed_steps = 0
+            return self.env.env.reset_model(seed=seed)
+        except:
+            if seed is not None:
+                self.set_seed(seed)
+            return self.env.reset()
+
+    def reset_model(self, seed=None):
+        # overloading for legacy code
+        return self.reset(seed)
 
     def step(self, action):
         return self.env.step(action)
 
     def render(self):
-        self.env.render()
+        try:
+            self.env.env.mujoco_render_frames = True
+            self.env.env.mj_render()
+        except:
+            self.env.render()
+
+    def set_seed(self, seed=123):
+        try:
+            self.env.seed(seed)
+        except AttributeError:
+            self.env._seed(seed)
+
+    def get_obs(self):
+        try:
+            return self.env.env._get_obs()
+        except:
+            return self.env.env.get_obs()
+
+    def get_env_infos(self):
+        try:
+            return self.env.env.get_env_infos()
+        except:
+            return {}
+
+    # ===========================================
+    # Trajectory optimization related
+    # Envs should support these functions in case of trajopt
+
+    def get_env_state(self):
+        try:
+            return self.env.env.get_env_state()
+        except:
+            raise NotImplementedError
+
+    def set_env_state(self, state_dict):
+        try:
+            self.env.env.set_env_state(state_dict)
+        except:
+            raise NotImplementedError
+
+    def real_env_step(self, bool_val):
+        try:
+            self.env.env.real_step = bool_val
+        except:
+            raise NotImplementedError
+
+    # ===========================================
 
     def visualize_policy(self, policy, horizon=1000, num_episodes=1, mode='exploration'):
         try:
             self.env.env.visualize_policy(policy, horizon, num_episodes, mode)
         except:
             for ep in range(num_episodes):
-                o = self.env.reset()
+                o = self.reset()
                 d = False
                 t = 0
                 while t < horizon and d is False:
                     a = policy.get_action(o)[0] if mode == 'exploration' else policy.get_action(o)[1]['evaluation']
-                    o, r, d, _ = self.env.step(a)
-                    self.env.render()
+                    o, r, d, _ = self.step(a)
+                    self.render()
                     t = t+1
 
-    def evaluate_policy(self, policy, 
-                        num_episodes=5, 
-                        horizon=None, 
-                        gamma=1, 
+    def evaluate_policy(self, policy,
+                        num_episodes=5,
+                        horizon=None,
+                        gamma=1,
                         visual=False,
-                        percentile=[], 
-                        get_full_dist=False, 
+                        percentile=[],
+                        get_full_dist=False,
                         mean_action=False,
-                        init_state=None,
+                        init_env_state=None,
                         terminate_at_done=True,
-                        save_video_location=None,
-                        seed=None):
+                        seed=123):
 
-        if seed is not None:
-            self.env._seed(seed)
+        self.set_seed(seed)
         horizon = self._horizon if horizon is None else horizon
         mean_eval, std, min_eval, max_eval = 0.0, 0.0, -1e8, -1e8
         ep_returns = np.zeros(num_episodes)
 
-        if save_video_location != None:
-            self.env.monitor.start(save_video_location, force=True)
-
         for ep in range(num_episodes):
-
-            if init_state is not None:
-                o = self.reset()
-                self.env.set_state(init_state[0], init_state[1])
-                o = self.env._get_obs()    
-            else:
-                o = self.reset()
-
+            self.reset()
+            if init_env_state is not None:
+                self.set_env_state(init_env_state)
             t, done = 0, False
             while t < horizon and (done == False or terminate_at_done == False):
-                if visual == True:
-                    self.render()
-                if mean_action:
-                    a = policy.get_action(o)[1]['mean']
-                else:
-                    a = policy.get_action(o)[0]
+                self.render() if visual is True else None
+                o = self.get_obs()
+                a = policy.get_action(o)[1]['evaluation'] if mean_action is True else policy.get_action(o)[0]
                 o, r, done, _ = self.step(a)
                 ep_returns[ep] += (gamma ** t) * r
                 t += 1
-        
-        if save_video_location != None:
-            self.env.monitor.close()
-        
+
         mean_eval, std = np.mean(ep_returns), np.std(ep_returns)
         min_eval, max_eval = np.amin(ep_returns), np.amax(ep_returns)
         base_stats = [mean_eval, std, min_eval, max_eval]
 
         percentile_stats = []
-        full_dist = []
-
         for p in percentile:
             percentile_stats.append(np.percentile(ep_returns, p))
 
-        if get_full_dist == True:
-            full_dist = ep_returns
+        full_dist = ep_returns if get_full_dist is True else None
 
         return [base_stats, percentile_stats, full_dist]

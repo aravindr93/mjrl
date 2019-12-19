@@ -8,21 +8,20 @@ class SwimmerEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         mujoco_env.MujocoEnv.__init__(self, 'swimmer.xml', 5)
         utils.EzPickle.__init__(self)
 
-    def _step(self, a):
+    def step(self, a):
         xposbefore = self.data.qpos[0]
         self.do_simulation(a, self.frame_skip)
         xposafter = self.data.qpos[0]
         
-        vel_x = (xposafter-xposbefore)/self.dt
-        vel_reward = -vel_x  # make swimmer move in negative x direction
-        ctrl_cost = 1e-3 * np.square(a).sum()
-        reward = vel_reward - ctrl_cost
+        delta = (xposafter - xposbefore)
+        # make agent move in the negative x direction
+        reward = -10.0 * delta
         done = False
 
-        ob = self._get_obs()
-        return ob, reward, False, {}
+        ob = self.get_obs()
+        return ob, reward, done, self.get_env_infos()
 
-    def _get_obs(self):
+    def get_obs(self):
         return np.concatenate([
             self.data.qpos.flat[2:],
             self.data.qvel.flat,
@@ -33,7 +32,28 @@ class SwimmerEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         qpos_init[2] = self.np_random.uniform(low=-np.pi, high=np.pi)
         self.set_state(qpos_init, self.init_qvel)
         self.sim.forward()
-        return self._get_obs()
+        return self.get_obs()
+
+    # --------------------------------
+    # get and set states
+    # --------------------------------
+
+    def get_env_state(self):
+        return dict(qp=self.data.qpos.copy(), qv=self.data.qvel.copy())
+
+    def set_env_state(self, state):
+        self.sim.reset()
+        qp = state['qp'].copy()
+        qv = state['qv'].copy()
+        self.set_state(qp, qv)
+        self.sim.forward()
+
+    # --------------------------------
+    # utility functions
+    # --------------------------------
+
+    def get_env_infos(self):
+        return dict(state=self.get_env_state())
 
     def mj_viewer_setup(self):
         self.viewer = MjViewer(self.sim)

@@ -11,8 +11,7 @@ from torch.autograd import Variable
 import copy
 
 # samplers
-import mjrl.samplers.trajectory_sampler as trajectory_sampler
-import mjrl.samplers.batch_sampler as batch_sampler
+import mjrl.samplers.core as trajectory_sampler
 
 # utility functions
 import mjrl.utils.process_samples as process_samples
@@ -27,8 +26,10 @@ class PPO(BatchREINFORCE):
                  epochs = 10,
                  mb_size = 64,
                  learn_rate = 3e-4,
-                 seed = 0,
-                 save_logs = False):
+                 seed = 123,
+                 save_logs = False,
+                 **kwargs
+                 ):
 
         self.env = env
         self.policy = policy

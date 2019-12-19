@@ -11,8 +11,7 @@ from torch.autograd import Variable
 import copy
 
 # samplers
-import mjrl.samplers.trajectory_sampler as trajectory_sampler
-import mjrl.samplers.batch_sampler as batch_sampler
+import mjrl.samplers.core as trajectory_sampler
 
 # utility functions
 import mjrl.utils.process_samples as process_samples
@@ -27,9 +26,12 @@ class NPG(BatchREINFORCE):
                  const_learn_rate=None,
                  FIM_invert_args={'iters': 10, 'damping': 1e-4},
                  hvp_sample_frac=1.0,
-                 seed=None,
+                 seed=123,
                  save_logs=False,
-                 kl_dist=None):
+                 kl_dist=None,
+                 input_normalization=None,
+                 **kwargs
+                 ):
         """
         All inputs are expected in mjrl's format unless specified
         :param normalized_step_size: Normalized step size (under the KL metric). Twice the desired KL distance
@@ -51,6 +53,11 @@ class NPG(BatchREINFORCE):
         self.hvp_subsample = hvp_sample_frac
         self.running_score = None
         if save_logs: self.logger = DataLog()
+        # input normalization (running average)
+        self.input_normalization = input_normalization
+        if self.input_normalization is not None:
+            if self.input_normalization > 1 or self.input_normalization <= 0:
+                self.input_normalization = None
 
     def HVP(self, observations, actions, vector, regu_coef=None):
         regu_coef = self.FIM_invert_args['damping'] if regu_coef is None else regu_coef
@@ -83,30 +90,21 @@ class NPG(BatchREINFORCE):
     # ----------------------------------------------------------
     def train_from_paths(self, paths):
 
-        # Concatenate from all the trajectories
-        observations = np.concatenate([path["observations"] for path in paths])
-        actions = np.concatenate([path["actions"] for path in paths])
-        advantages = np.concatenate([path["advantages"] for path in paths])
-        # Advantage whitening
-        advantages = (advantages - np.mean(advantages)) / (np.std(advantages) + 1e-6)
-        # NOTE : advantage should be zero mean in expectation
-        # normalized step size invariant to advantage scaling, 
-        # but scaling can help with least squares
-
-        # cache return distributions for the paths
-        path_returns = [sum(p["rewards"]) for p in paths]
-        mean_return = np.mean(path_returns)
-        std_return = np.std(path_returns)
-        min_return = np.amin(path_returns)
-        max_return = np.amax(path_returns)
-        base_stats = [mean_return, std_return, min_return, max_return]
-        self.running_score = mean_return if self.running_score is None else \
-                             0.9*self.running_score + 0.1*mean_return  # approx avg of last 10 iters
+        observations, actions, advantages, base_stats, self.running_score = self.process_paths(paths)
         if self.save_logs: self.log_rollout_statistics(paths)
 
         # Keep track of times for various computations
         t_gLL = 0.0
         t_FIM = 0.0
+
+        # normalize inputs if necessary
+        if self.input_normalization:
+            data_in_shift, data_in_scale = np.mean(observations, axis=0), np.std(observations, axis=0)
+            pi_in_shift, pi_in_scale = self.policy.model.in_shift.data.numpy(), self.policy.model.in_scale.data.numpy()
+            pi_out_shift, pi_out_scale = self.policy.model.out_shift.data.numpy(), self.policy.model.out_scale.data.numpy()
+            pi_in_shift = self.input_normalization * pi_in_shift + (1-self.input_normalization) * data_in_shift
+            pi_in_scale = self.input_normalization * pi_in_scale + (1-self.input_normalization) * data_in_scale
+            self.policy.model.set_transformations(pi_in_shift, pi_in_scale, pi_out_shift, pi_out_scale)
 
         # Optimization algorithm
         # --------------------------

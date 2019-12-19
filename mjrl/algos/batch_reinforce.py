@@ -1,18 +1,17 @@
+"""
+Basic reinforce algorithm using on-policy rollouts
+Also has function to perform linesearch on KL (improves stability)
+"""
+
 import logging
 logging.disable(logging.CRITICAL)
 import numpy as np
-import scipy as sp
-import scipy.sparse.linalg as spLA
-import copy
 import time as timer
 import torch
-import torch.nn as nn
 from torch.autograd import Variable
-import copy
 
 # samplers
-import mjrl.samplers.trajectory_sampler as trajectory_sampler
-import mjrl.samplers.batch_sampler as batch_sampler
+import mjrl.samplers.core as trajectory_sampler
 
 # utility functions
 import mjrl.utils.process_samples as process_samples
@@ -22,8 +21,11 @@ from mjrl.utils.logger import DataLog
 class BatchREINFORCE:
     def __init__(self, env, policy, baseline,
                  learn_rate=0.01,
-                 seed=None,
-                 save_logs=False):
+                 seed=123,
+                 desired_kl=None,
+                 save_logs=False,
+                 **kwargs
+                 ):
 
         self.env = env
         self.policy = policy
@@ -32,6 +34,7 @@ class BatchREINFORCE:
         self.seed = seed
         self.save_logs = save_logs
         self.running_score = None
+        self.desired_kl = desired_kl
         if save_logs: self.logger = DataLog()
 
     def CPI_surrogate(self, observations, actions, advantages):
@@ -56,15 +59,17 @@ class BatchREINFORCE:
 
     # ----------------------------------------------------------
     def train_step(self, N,
+                   env=None,
                    sample_mode='trajectories',
-                   env_name=None,
-                   T=1e6,
+                   horizon=1e6,
                    gamma=0.995,
-                   gae_lambda=0.98,
-                   num_cpu='max'):
+                   gae_lambda=0.97,
+                   num_cpu='max',
+                   env_kwargs=None,
+                   ):
 
         # Clean up input arguments
-        if env_name is None: env_name = self.env.env_id
+        env = self.env.env_id if env is None else env
         if sample_mode != 'trajectories' and sample_mode != 'samples':
             print("sample_mode in NPG must be either 'trajectories' or 'samples'")
             quit()
@@ -72,11 +77,13 @@ class BatchREINFORCE:
         ts = timer.time()
 
         if sample_mode == 'trajectories':
-            paths = trajectory_sampler.sample_paths_parallel(N, self.policy, T, env_name,
-                                                             self.seed, num_cpu)
+            input_dict = dict(num_traj=N, env=env, policy=self.policy, horizon=horizon,
+                              base_seed=self.seed, num_cpu=num_cpu, env_kwargs=env_kwargs)
+            paths = trajectory_sampler.sample_paths(**input_dict)
         elif sample_mode == 'samples':
-            paths = batch_sampler.sample_paths(N, self.policy, T, env_name=env_name,
-                                               pegasus_seed=self.seed, num_cpu=num_cpu)
+            input_dict = dict(num_samples=N, env=env, policy=self.policy, horizon=horizon,
+                              base_seed=self.seed, num_cpu=num_cpu, env_kwargs=env_kwargs)
+            paths = trajectory_sampler.sample_data_batch(**input_dict)
 
         if self.save_logs:
             self.logger.log_kv('time_sampling', timer.time() - ts)
@@ -90,6 +97,10 @@ class BatchREINFORCE:
         # train from paths
         eval_statistics = self.train_from_paths(paths)
         eval_statistics.append(N)
+        # log number of samples
+        if self.save_logs:
+            num_samples = np.sum([p["rewards"].shape[0] for p in paths])
+            self.logger.log_kv('num_samples', num_samples)
         # fit baseline
         if self.save_logs:
             ts = timer.time()
@@ -105,22 +116,7 @@ class BatchREINFORCE:
     # ----------------------------------------------------------
     def train_from_paths(self, paths):
 
-        # Concatenate from all the trajectories
-        observations = np.concatenate([path["observations"] for path in paths])
-        actions = np.concatenate([path["actions"] for path in paths])
-        advantages = np.concatenate([path["advantages"] for path in paths])
-        # Advantage whitening
-        advantages = (advantages - np.mean(advantages)) / (np.std(advantages) + 1e-6)
-
-        # cache return distributions for the paths
-        path_returns = [sum(p["rewards"]) for p in paths]
-        mean_return = np.mean(path_returns)
-        std_return = np.std(path_returns)
-        min_return = np.amin(path_returns)
-        max_return = np.amax(path_returns)
-        base_stats = [mean_return, std_return, min_return, max_return]
-        self.running_score = mean_return if self.running_score is None else \
-                             0.9*self.running_score + 0.1*mean_return  # approx avg of last 10 iters
+        observations, actions, advantages, base_stats, self.running_score = self.process_paths(paths)
         if self.save_logs: self.log_rollout_statistics(paths)
 
         # Keep track of times for various computations
@@ -135,10 +131,25 @@ class BatchREINFORCE:
         vpg_grad = self.flat_vpg(observations, actions, advantages)
         t_gLL += timer.time() - ts
 
-        # Policy update
-        # --------------------------
-        curr_params = self.policy.get_param_values()
-        new_params = curr_params + self.alpha * vpg_grad
+        # Policy update with linesearch
+        # ------------------------------
+        if self.desired_kl is not None:
+            max_ctr = 100
+            alpha = self.alpha
+            curr_params = self.policy.get_param_values()
+            for ctr in range(max_ctr):
+                new_params = curr_params + alpha * vpg_grad
+                self.policy.set_param_values(new_params, set_new=True, set_old=False)
+                kl_dist = self.kl_old_new(observations, actions).data.numpy().ravel()[0]
+                if kl_dist <= self.desired_kl:
+                    break
+                else:
+                    print("backtracking")
+                    alpha = alpha / 2.0
+        else:
+            curr_params = self.policy.get_param_values()
+            new_params = curr_params + self.alpha * vpg_grad
+
         self.policy.set_param_values(new_params, set_new=True, set_old=False)
         surr_after = self.CPI_surrogate(observations, actions, advantages).data.numpy().ravel()[0]
         kl_dist = self.kl_old_new(observations, actions).data.numpy().ravel()[0]
@@ -162,6 +173,29 @@ class BatchREINFORCE:
                     pass
 
         return base_stats
+
+
+    def process_paths(self, paths):
+        # Concatenate from all the trajectories
+        observations = np.concatenate([path["observations"] for path in paths])
+        actions = np.concatenate([path["actions"] for path in paths])
+        advantages = np.concatenate([path["advantages"] for path in paths])
+
+        # Advantage whitening
+        advantages = (advantages - np.mean(advantages)) / (np.std(advantages) + 1e-6)
+
+        # cache return distributions for the paths
+        path_returns = [sum(p["rewards"]) for p in paths]
+        mean_return = np.mean(path_returns)
+        std_return = np.std(path_returns)
+        min_return = np.amin(path_returns)
+        max_return = np.amax(path_returns)
+        base_stats = [mean_return, std_return, min_return, max_return]
+        running_score = mean_return if self.running_score is None else \
+                        0.9 * self.running_score + 0.1 * mean_return
+
+        return observations, actions, advantages, base_stats, running_score
+
 
     def log_rollout_statistics(self, paths):
         path_returns = [sum(p["rewards"]) for p in paths]

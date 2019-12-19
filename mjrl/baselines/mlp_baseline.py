@@ -9,24 +9,29 @@ import copy
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+from mjrl.utils.optimize_model import fit_data
 
 import pickle
 
 class MLPBaseline:
-    def __init__(self, env_spec, obs_dim=None, learn_rate=1e-3, reg_coef=0.0,
-                 batch_size=64, epochs=1, use_gpu=False):
-        self.n = obs_dim if obs_dim is not None else env_spec.observation_dim
+    def __init__(self, env_spec, inp_dim=None, inp='obs', learn_rate=1e-3, reg_coef=0.0,
+                 batch_size=64, epochs=1, use_gpu=False, hidden_sizes=(128, 128)):
+        self.n = inp_dim if inp_dim is not None else env_spec.observation_dim
         self.batch_size = batch_size
         self.epochs = epochs
         self.reg_coef = reg_coef
         self.use_gpu = use_gpu
+        self.inp = inp
+        self.hidden_sizes = hidden_sizes
 
         self.model = nn.Sequential()
-        self.model.add_module('fc_0', nn.Linear(self.n+4, 128))
-        self.model.add_module('relu_0', nn.ReLU())
-        self.model.add_module('fc_1', nn.Linear(128, 128))
-        self.model.add_module('relu_1', nn.ReLU())
-        self.model.add_module('fc_2', nn.Linear(128, 1))
+        layer_sizes = (self.n + 4, ) + hidden_sizes + (1, )
+        for i in range(len(layer_sizes) - 1):
+            layer_id = 'fc_' + str(i)
+            relu_id = 'relu_' + str(i)
+            self.model.add_module(layer_id, nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+            if i != len(layer_sizes) - 2:
+                self.model.add_module(relu_id, nn.ReLU())
 
         if self.use_gpu:
             self.model.cuda()
@@ -35,7 +40,10 @@ class MLPBaseline:
         self.loss_function = torch.nn.MSELoss()
 
     def _features(self, paths):
-        o = np.concatenate([path["observations"] for path in paths])
+        if self.inp == 'env_features':
+            o = np.concatenate([path["env_infos"]["env_features"][0] for path in paths])
+        else:
+            o = np.concatenate([path["observations"] for path in paths])
         o = np.clip(o, -10, 10)/10.0
         if o.ndim > 2:
             o = o.reshape(o.shape[0], -1)
@@ -80,20 +88,8 @@ class MLPBaseline:
             errors = returns.ravel() - predictions
             error_before = np.sum(errors**2)/(np.sum(returns**2) + 1e-8)
 
-        for ep in range(self.epochs):
-            rand_idx = np.random.permutation(num_samples)
-            for mb in range(int(num_samples / self.batch_size) - 1):
-                if self.use_gpu:
-                    data_idx = torch.LongTensor(rand_idx[mb*self.batch_size:(mb+1)*self.batch_size]).cuda()
-                else:
-                    data_idx = torch.LongTensor(rand_idx[mb*self.batch_size:(mb+1)*self.batch_size])
-                batch_x = featmat_var[data_idx]
-                batch_y = returns_var[data_idx]
-                self.optimizer.zero_grad()
-                yhat = self.model(batch_x)
-                loss = self.loss_function(yhat, batch_y)
-                loss.backward()
-                self.optimizer.step()
+        epoch_losses = fit_data(self.model, featmat_var, returns_var, self.optimizer,
+                                self.loss_function, self.batch_size, self.epochs)
 
         if return_errors:
             if self.use_gpu:

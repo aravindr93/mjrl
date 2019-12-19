@@ -1,25 +1,41 @@
 import numpy as np
 import copy
 
+
 class LinearBaseline:
-    def __init__(self, env_spec, reg_coeff=1e-5):
-        n = env_spec.observation_dim       # number of states
+    def __init__(self, env_spec, inp_dim=None, inp='obs', reg_coeff=1e-5):
+        self.inp = inp
         self._reg_coeff = reg_coeff
         self._coeffs = None
 
-    def _features(self, path):
-        # compute regression features for the path
-        o = np.clip(path["observations"], -10, 10)
+    def _features(self, paths):
+        if self.inp == 'env_features':
+            o = np.concatenate([path["env_infos"]["env_features"][0] for path in paths])
+        else:
+            o = np.concatenate([path["observations"] for path in paths])
+        o = np.clip(o, -10, 10)/10.0
         if o.ndim > 2:
             o = o.reshape(o.shape[0], -1)
-        l = len(path["rewards"])
-        al = np.arange(l).reshape(-1, 1) / 1000.0
-        feat = np.concatenate([o, al, al**2, al**3, np.ones((l, 1))], axis=1)
-        return feat
+        N, n = o.shape
+        num_feat = int( n + 1 + 4 )  # linear + bias (1.0) + time till pow 4
+        feat_mat = np.ones((N, num_feat))
+
+        # linear features
+        feat_mat[:,:n] = o
+
+        k = 0  # start from this row
+        for i in range(len(paths)):
+            l = len(paths[i]["rewards"])
+            al = np.arange(l)/1000.0
+            for j in range(4):
+                feat_mat[k:k+l, -4+j] = al**(j+1)
+            k += l
+
+        return feat_mat
 
     def fit(self, paths, return_errors=False):
 
-        featmat = np.concatenate([self._features(path) for path in paths])
+        featmat = self._features(paths)
         returns = np.concatenate([path["returns"] for path in paths])
 
         if return_errors:
@@ -46,4 +62,4 @@ class LinearBaseline:
     def predict(self, path):
         if self._coeffs is None:
             return np.zeros(len(path["rewards"]))
-        return self._features(path).dot(self._coeffs)
+        return self._features([path]).dot(self._coeffs)

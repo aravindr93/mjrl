@@ -10,8 +10,8 @@ SEED = 500
 
 e = GymEnv('mjrl_point_mass-v0')
 policy = MLP(e.spec, hidden_sizes=(32,32), seed=SEED)
-baseline = QuadraticBaseline(e.spec)
-agent = NPG(e, policy, baseline, normalized_step_size=0.1, seed=SEED, save_logs=True)
+baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=64, epochs=10, learn_rate=1e-3)
+agent = NPG(e, policy, baseline, normalized_step_size=0.05, seed=SEED, save_logs=True)
 
 ts = timer.time()
 train_agent(job_name='point_mass_exp1',
@@ -24,5 +24,6 @@ train_agent(job_name='point_mass_exp1',
             sample_mode='trajectories',
             num_traj=40,      # samples = 40*25 = 1000
             save_freq=5,
-            evaluation_rollouts=10)
+            evaluation_rollouts=None,
+            plot_keys=['stoc_pol_mean', 'running_score'])
 print("time taken = %f" % (timer.time()-ts))
