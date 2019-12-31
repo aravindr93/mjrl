@@ -7,7 +7,9 @@ import numpy as np
 import pickle
 from mjrl.utils.gym_env import GymEnv
 from mjrl.policies.gaussian_mlp import MLP
-import trajopt.envs
+# import trajopt.envs
+import robel
+import mj_envs
 
 DESC = '''
 Helper script to visualize policy (in mjrl format).\n

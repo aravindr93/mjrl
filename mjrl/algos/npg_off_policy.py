@@ -9,6 +9,7 @@ import mjrl.samplers.core as trajectory_sampler
 import mjrl.utils.process_samples as process_samples
 import numpy as np
 import time
+import torch
 
 class NPGOffPolicy(NPG):
 
@@ -149,7 +150,7 @@ class NPGOffPolicy(NPG):
             self.summary_writer.add_scalar('MeanRewardLoss/mean', np.mean(reward_means), iteration)
             
             # log the policy stds
-            stds = np.exp(self.policy.log_std.detach().numpy())
+            stds = np.exp(self.policy.log_std.cpu().detach().numpy())
             for i, std in enumerate(stds):
                 self.summary_writer.add_scalar('PolicyStd/std_{}'.format(i), std, iteration)
 
@@ -182,15 +183,15 @@ class NPGOffPolicy(NPG):
         weights = (weights - np.mean(weights)) / (np.std(weights) + 1e-6)
 
         # update policy
-        surr_before = self.CPI_surrogate(observations, actions, weights).data.numpy().ravel()[0]
+        surr_before = self.CPI_surrogate(observations, actions, weights).data.cpu().numpy().ravel()[0]
         alpha, n_step_size, t_gLL, t_FIM, new_params = self.update_from_states_actions(observations, actions, weights)
         
         if np.isnan(new_params).any():
             import pdb; pdb.set_trace()
             raise RuntimeError('policy has nan params')
 
-        surr_after = self.CPI_surrogate(observations, actions, weights).data.numpy().ravel()[0]
-        kl_dist = self.kl_old_new(observations, actions).data.numpy().ravel()[0]
+        surr_after = self.CPI_surrogate(observations, actions, weights).data.cpu().numpy().ravel()[0]
+        kl_dist = self.kl_old_new(observations, actions).data.cpu().numpy().ravel()[0]
         self.policy.set_param_values(new_params, set_new=True, set_old=True)
         return alpha, n_step_size, t_gLL, t_FIM, surr_before, surr_after, kl_dist
 
@@ -249,27 +250,38 @@ class NPGOffPolicy(NPG):
 
         samples = self.baseline.buffer.get_sample(self.num_update_states)
 
-        start_cpu = time.time()
+        # start_cpu = time.time()
 
-        observations = samples['observations'].to('cpu').numpy() # TODO: don't convert to/from numpy
-        times = samples['time'].to('cpu').numpy()
-        actions = self.policy.get_action_batch(observations)
-        Qs = self.baseline.predict(observations, actions, times)
-        _, _, Vs = self.baseline.compute_average_value(observations, times)
-        weights = Qs - Vs.detach().cpu().numpy()
-        # return observations, actions, weights
+        # observations = samples['observations'].to('cpu').numpy() # TODO: don't convert to/from numpy
+        # times = samples['time'].to('cpu').numpy()
+        # actions = self.policy.get_action_batch(observations)
+        # Qs = self.baseline.predict(observations, actions, times)
+        # _, _, Vs = self.baseline.compute_average_value(observations, times)
+        # weights = Qs - Vs.detach().cpu().numpy()
+        # # return observations, actions, weights
 
-        end_cpu = time.time()
+        # end_cpu = time.time()
 
         observations = samples['observations']
         times = samples['time']
-        actions = self.policy.get_action_pytorch(observations)
-        Qs = self.baseline.forward(observations, actions, times)
+        actions_all = torch.zeros(self.num_update_states * self.num_update_actions, self.env.action_dim)
+        for i in range(self.num_update_actions):
+            actions = self.policy.get_action_pytorch(observations)
+            actions_all[i * self.num_update_states:(i + 1) * self.num_update_states] = actions
+        
+
+        obs_tiled = observations.repeat(self.num_update_actions, 1)
+        times_tiled = times.repeat(self.num_update_actions)
+        # Qs = self.baseline.forward(observations, actions, times)
+        Qs = self.baseline.forward(obs_tiled, actions_all, times_tiled)
         _, _, Vs = self.baseline.compute_average_value(observations, times)
-        weights = Qs - Vs
+        Vs_tiled = Vs.repeat(self.num_update_actions, 1)
+        # weights = Qs - Vs
+        weights = Qs - Vs_tiled
 
-        end_gpu = time.time()
+        # end_gpu = time.time()
 
-        print('gpu', end_gpu - end_cpu, 'cpu', end_cpu - start_cpu)
+        # print('gpu', end_gpu - end_cpu, 'cpu', end_cpu - start_cpu)
 
-        return weights.detach().cpu().numpy()
+        # return observations.detach().cpu().numpy(), actions.detach().cpu().numpy(), weights.detach().cpu().numpy()
+        return obs_tiled.detach().cpu().numpy(), actions_all.detach().cpu().numpy(), weights.detach().cpu().numpy()

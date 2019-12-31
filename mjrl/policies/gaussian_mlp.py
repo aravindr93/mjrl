@@ -101,8 +101,8 @@ class MLP(torch.nn.Module):
         
     def get_action_batch(self, observations, return_info=False):
         n = observations.shape[0]
-        obs_var = Variable(torch.from_numpy(observations).float(), requires_grad=False)
-        means = self.model(obs_var).data.numpy()
+        obs_var = torch.from_numpy(observations).float()
+        means = self.model(obs_var).data.cpu().numpy()
         noise = np.exp(self.log_std_val) * np.random.randn(n, self.m)
         action = means + noise
         if return_info:
@@ -119,8 +119,8 @@ class MLP(torch.nn.Module):
         if mean_action:
             return means
         else:
-            noise = np.exp(self.log_std_val) * torch.randn(observation.shape[0], self.m)
-            action = means + noise
+            noise = torch.exp(torch.from_numpy(self.log_std_val)).float() * torch.randn(observation.shape[0], self.m)
+            action = means + noise.to(self.device)
             return action
 
     def mean_LL(self, observations, actions, model=None, log_std=None):

@@ -19,7 +19,7 @@ class QNetwork(nn.Module):
                  nonlineariry = None,
                  seed=123,
                  device='cpu',
-                 q_function_hidden_sizes=(DEFAULT_HIDDEN_SIZE,),
+                 q_function_hidden_sizes=(DEFAULT_HIDDEN_SIZE,DEFAULT_HIDDEN_SIZE),
                  reconstruction_hidden_sizes=(DEFAULT_HIDDEN_SIZE,DEFAULT_HIDDEN_SIZE),
                  reward_hidden_sizes=(DEFAULT_HIDDEN_SIZE,),
                  nonlin = nn.ReLU(),
@@ -191,8 +191,8 @@ class QNetwork(nn.Module):
 class QPi:
     def __init__(self, policy, state_dim, act_dim, time_dim, horizon, replay_buffer, gamma=0.9, hidden_size=(64, 64), seed=123,
                  fit_lr=1e-3, fit_wd=0.0, batch_size=64, num_bellman_iters=1, num_fit_iters=16, device='cpu', activation='relu',
-                 use_mu_approx=True, num_value_actions=-1, summary_writer=None, shared_hidden_sizes=(DEFAULT_HIDDEN_SIZE, DEFAULT_HIDDEN_SIZE),
-                 q_function_hidden_sizes=(DEFAULT_HIDDEN_SIZE,), reconstruction_hidden_sizes=(DEFAULT_HIDDEN_SIZE,),
+                 use_mu_approx=True, num_value_actions=-1, summary_writer=None,
+                 q_function_hidden_sizes=(DEFAULT_HIDDEN_SIZE,DEFAULT_HIDDEN_SIZE), reconstruction_hidden_sizes=(DEFAULT_HIDDEN_SIZE,DEFAULT_HIDDEN_SIZE),
                  reward_hidden_sizes=(DEFAULT_HIDDEN_SIZE,), nonlin = nn.ReLU(), d_shared = DEFAULT_HIDDEN_SIZE, use_auxilary=True, 
                  recon_weight=1.0, reward_weight=1e-1, **kwargs):
 
@@ -462,7 +462,6 @@ class QPi:
             # make network approximate Bellman targets
 
             self.gamma = calc_gamma(bellman_iter)
-            print('gamma', self.gamma)
             
             start = time.time()
             ret = self.fit_targets(all_losses=all_losses)
