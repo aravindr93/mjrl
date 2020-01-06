@@ -40,6 +40,38 @@ class TrajectoryReplayBuffer:
         next_idx = np.clip(sample_idx + 1, 0, self.buffer['observations'].shape[0]-1)
         sample['next_observations'] = self.buffer['observations'][next_idx]
         return sample
+    
+    def combine_and_remove_terminal(self, samples):
+        
+        # combine first into one tensor
+        all_samples = {}
+        for key in samples[0].keys():
+            all_samples[key] = torch.cat([a[key] for a in samples])
+
+        keep_idxs = torch.where(1 - all_samples['is_terminal'])
+        
+        safe_samples = {}
+
+        for key in all_samples:
+            safe_samples[key] = all_samples[key][keep_idxs]
+
+        return safe_samples
+
+    def get_sample_safe(self, sample_size=1):
+        samples = self.get_sample(sample_size=sample_size)
+
+        total_samples = (1 - samples['is_terminal']).sum()
+        all_samples = [samples]
+
+        while total_samples < sample_size:
+            x = sample_size - int(total_samples.item())
+            more_samples = self.get_sample(sample_size=x)
+            total_samples += (1 - more_samples['is_terminal']).sum()
+            all_samples.append(more_samples)
+        
+        return self.combine_and_remove_terminal(all_samples)
+
+
 
     def get_paths(self, sample_size=1):
         path_idx = np.random.choice(len(self.data_buffer), sample_size)

@@ -47,6 +47,10 @@ class DynamicsModel:
         return fit_model(self.network, s, a, s_next, self.optimizer,
                          self.loss_fn, fit_mb_size, fit_epochs, set_transforms=True)
 
+    def fit_holdout(self, s, a, s_next, s_valid, a_valid, s_next_valid, fit_mb_size, fit_epochs, valid_freq=10):
+        return fit_model_holdout(self.network, s, a, s_next, s_valid, a_valid, s_next_valid, self.optimizer,
+                         self.loss_fn, fit_mb_size, fit_epochs, set_transforms=True, valid_freq=valid_freq)
+
 
 class DynamicsNet(nn.Module):
     def __init__(self, state_dim, act_dim, hidden_sizes=(64,64),
@@ -201,3 +205,86 @@ def fit_model(nn_model, s, a, s_next, optimizer,
         epoch_losses.append(ep_loss * 1.0/num_steps)
     # print("Loss after 1 epoch = %f | Loss after %i epochs = %f" % (epoch_losses[0], epochs, epoch_losses[-1]))
     return epoch_losses
+
+
+def fit_model_holdout(nn_model, s, a, s_next, s_valid, a_valid, s_next_valid, optimizer,
+              loss_func, batch_size, epochs,
+              set_transforms=True, valid_freq=10):
+    """
+    :param nn_model:        pytorch model of form sp_hat = f(s, a) (class)
+    :param s:               state at time t
+    :param a:               action at time t
+    :param s_next:          state at time t+1
+    :param optimizer:       optimizer to use
+    :param loss_func:       loss criterion
+    :param batch_size:      mini-batch size
+    :param epochs:          number of epochs
+    :param set_transforms:  set the model transforms from data (bool)
+    :return:
+    """
+
+    assert type(s) == type(a)
+    assert type(s) == type(s_next)
+    assert s.shape[0] == a.shape[0]
+    assert s.shape[0] == s_next.shape[0]
+
+    device = 'cuda' if next(nn_model.parameters()).is_cuda else 'cpu'
+
+    if type(s) == np.ndarray:
+        s = torch.from_numpy(s).float()
+        a = torch.from_numpy(a).float()
+        s_next = torch.from_numpy(s_next).float()
+
+        s_valid = torch.from_numpy(s_valid).float()
+        a_valid = torch.from_numpy(a_valid).float()
+        s_next_valid = torch.from_numpy(s_next_valid).float()
+
+    s = s.to(device)
+    a = a.to(device)
+    s_next = s_next.to(device)
+
+    s_valid = s_valid.to(device)
+    a_valid = a_valid.to(device)
+    s_next_valid = s_next_valid.to(device)
+
+    valid_losses = []
+    valid_parameters = []
+
+    if set_transforms:
+        delta = s_next - s
+        s_mean, s_sigma = torch.mean(s, dim=0), torch.std(s, dim=0)
+        a_mean, a_sigma = torch.mean(a, dim=0), torch.std(a, dim=0)
+        out_mean, out_sigma = torch.mean(delta, dim=0), torch.std(delta, dim=0)
+        nn_model.set_transformations(s_mean, s_sigma, a_mean, a_sigma, out_mean, out_sigma)
+
+    num_samples = s.shape[0]
+    epoch_losses = []
+    for ep in tqdm(range(epochs)):
+        rand_idx = torch.LongTensor(np.random.permutation(num_samples)).to(device)
+        ep_loss = 0.0
+        num_steps = int(num_samples // batch_size)
+        for mb in range(num_steps):
+            data_idx = rand_idx[mb*batch_size:(mb+1)*batch_size]
+            batch_s  = s[data_idx]
+            batch_a  = a[data_idx]
+            batch_sp = s_next[data_idx]
+            optimizer.zero_grad()
+            sp_hat   = nn_model.forward(batch_s, batch_a)
+            loss = loss_func(sp_hat, batch_sp)
+            loss.backward()
+            optimizer.step()
+            ep_loss += loss.to('cpu').data.numpy()
+        epoch_losses.append(ep_loss * 1.0 / num_steps)
+        if ep % valid_freq == 0:
+            sp_hat_valid = nn_model.forward(s_valid, a_valid)
+            valid_loss = loss_func(sp_hat_valid, s_next_valid).item()
+            valid_losses.append(valid_loss)
+            valid_parameters.append(nn_model.state_dict())
+
+    best_loss_idx = np.argmin(valid_losses)
+    print('best_loss_idx', best_loss_idx, len(valid_losses))
+    nn_model.load_state_dict(valid_parameters[best_loss_idx])
+
+    # print("Loss after 1 epoch = %f | Loss after %i epochs = %f" % (epoch_losses[0], epochs, epoch_losses[-1]))
+    return epoch_losses, valid_losses
+
