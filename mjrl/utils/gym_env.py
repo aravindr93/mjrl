@@ -130,11 +130,14 @@ class GymEnv(object):
                 o = self.reset()
                 d = False
                 t = 0
+                score = 0.0
                 while t < horizon and d is False:
                     a = policy.get_action(o)[0] if mode == 'exploration' else policy.get_action(o)[1]['evaluation']
                     o, r, d, _ = self.step(a)
+                    score = score + r
                     self.render()
                     t = t+1
+                print("Episode score = %f" % score)
 
     def evaluate_policy(self, policy,
                         num_episodes=5,
