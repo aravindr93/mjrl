@@ -17,7 +17,8 @@ def do_rollout(
         policy,
         eval_mode = False,
         horizon = 1e6,
-        base_seed = None,
+        base_seed=None,
+        include_full_state=False,
         env_kwargs=None,
 ):
     """
@@ -61,6 +62,11 @@ def do_rollout(
         agent_infos = []
         env_infos = []
 
+        if include_full_state:
+            state_dict = {}
+            for key in env.get_env_state().keys():
+                state_dict[key] = []
+
         o = env.reset()
         done = False
         t = 0
@@ -81,6 +87,11 @@ def do_rollout(
             o = next_o
             t += 1
 
+            if include_full_state:
+                state = env.get_env_state()
+                for key in state.keys():
+                    state_dict[key].append(np.copy(state[key]))
+
         is_terminal = np.zeros(len(observations))
         is_terminal[-1] = 1.0
         path = dict(
@@ -95,6 +106,11 @@ def do_rollout(
             is_terminal=is_terminal,
             time=np.arange(len(observations)),
         )
+
+        if include_full_state:
+            for key in state_dict.keys():
+                path[key] = np.array(state_dict[key])
+
         paths.append(path)
 
     del(env)
@@ -112,6 +128,7 @@ def sample_paths(
         max_process_time=300,
         max_timeouts=4,
         suppress_print=False,
+        include_full_state=False,
         env_kwargs=None,
         ):
 
@@ -122,7 +139,7 @@ def sample_paths(
     if num_cpu == 1:
         input_dict = dict(num_traj=num_traj, env=env, policy=policy,
                           eval_mode=eval_mode, horizon=horizon, base_seed=base_seed,
-                          env_kwargs=env_kwargs)
+                          include_full_state=include_full_state, env_kwargs=env_kwargs)
         # dont invoke multiprocessing if not necessary
         return do_rollout(**input_dict)
 
@@ -149,7 +166,7 @@ def sample_paths(
         input_dict = dict(num_traj=paths_per_cpu, env=env, policy=rollout_pol,
                           eval_mode=eval_mode, horizon=horizon,
                           base_seed=base_seed + i * paths_per_cpu,
-                          env_kwargs=env_kwargs)
+                          include_full_state=include_full_state, env_kwargs=env_kwargs)
         input_dict_list.append(input_dict)
     if suppress_print is False:
         start_time = timer.time()

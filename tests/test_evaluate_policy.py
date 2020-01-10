@@ -28,7 +28,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_eval_trajs', type=int, default=100)
     parser.add_argument('--eval_mode', type=bool, default=False)
     parser.add_argument('--plot_losses', type=bool, default=True)
-    parser.add_argument('--gamma', type=float, default=0.9)
+    parser.add_argument('--gamma', type=float, default=0.95)
     parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--seed', type=int, default=0xDEADBEEF)
 
@@ -49,7 +49,7 @@ if __name__ == '__main__':
 
     init_q_function = None
 
-    HIDDEN = 256
+    HIDDEN = 2048
     # recon_weight = 0.0
     # reward_weight = 0.0
     recon_weight = 1e-1
@@ -61,7 +61,7 @@ if __name__ == '__main__':
     #     reconstruction_hidden_sizes=(HIDDEN, HIDDEN), q_function_hidden_sizes=(HIDDEN,HIDDEN), device=args.device, base_seed=args.seed+2)
 
     eval_dict, q_function = train_and_evaluate(eval_policy, replay_buffer, e, args.gamma, eval_paths, use_aux=True, init_function=init_q_function,
-        num_traj=args.num_eval_trajs, print_info=True, num_bellman_iters=10, num_fit_iters=300,
+        num_traj=args.num_eval_trajs, print_info=True, num_bellman_iters=15, num_fit_iters=300,
         batch_size=4096, use_mu_approx=True, num_value_actions=15, recon_weight=recon_weight, reward_weight=reward_weight,
         reconstruction_hidden_sizes=(HIDDEN, HIDDEN), q_function_hidden_sizes=(HIDDEN,HIDDEN), device=args.device, base_seed=args.seed+2)
 

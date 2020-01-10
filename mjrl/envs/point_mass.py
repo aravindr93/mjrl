@@ -3,6 +3,7 @@ from gym import utils
 from mjrl.envs import mujoco_env
 from mujoco_py import MjViewer
 
+import torch
 
 class PointMassEnv(mujoco_env.MujocoEnv, utils.EzPickle):
     def __init__(self):
@@ -25,20 +26,35 @@ class PointMassEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         return np.concatenate([agent_pos[:2], self.data.qvel.ravel(), target_pos[:2]])
 
     def get_reward(self, obs, act=None):
-        if len(obs.shape) == 1:
-            # vector obs, called when stepping the env
-            agent_pos = obs[:2]
-            target_pos = obs[-2:]
-            l1_dist = np.sum(np.abs(agent_pos - target_pos))
-            l2_dist = np.linalg.norm(agent_pos - target_pos)
-        else:
-            obs = np.expand_dims(obs, axis=0) if len(obs.shape) == 2 else obs
-            agent_pos = obs[:, :, :2]
-            target_pos = obs[:, :, -2:]
-            l1_dist = np.sum(np.abs(agent_pos - target_pos), axis=-1)
-            l2_dist = np.linalg.norm(agent_pos - target_pos, axis=-1)
-        reward = -1.0 * l1_dist - 0.5 * l2_dist
-        return reward
+        if type(obs) == np.ndarray:
+            if len(obs.shape) == 1:
+                # vector obs, called when stepping the env
+                agent_pos = obs[:2]
+                target_pos = obs[-2:]
+                l1_dist = np.sum(np.abs(agent_pos - target_pos))
+                l2_dist = np.linalg.norm(agent_pos - target_pos)
+            else:
+                obs = np.expand_dims(obs, axis=0) if len(obs.shape) == 2 else obs
+                agent_pos = obs[:, :, :2]
+                target_pos = obs[:, :, -2:]
+                l1_dist = np.sum(np.abs(agent_pos - target_pos), axis=-1)
+                l2_dist = np.linalg.norm(agent_pos - target_pos, axis=-1)
+            reward = -1.0 * l1_dist - 0.5 * l2_dist
+            return reward
+        elif type(obs) == torch.Tensor:
+            if len(obs.shape) == 1:
+                # vector obs, called when stepping the env
+                agent_pos = obs[:2]
+                target_pos = obs[-2:]
+                l1_dist = torch.norm(agent_pos - target_pos, p=1)
+                l2_dist = torch.norm(agent_pos - target_pos, p=2)
+            else:
+                agent_pos = obs[:, :2]
+                target_pos = obs[:, -2:]
+                l1_dist = torch.norm(agent_pos - target_pos, dim=1, p=1)
+                l2_dist = torch.norm(agent_pos - target_pos, dim=1, p=2)
+            reward = -1.0 * l1_dist - 0.5 * l2_dist
+            return reward
 
     def compute_path_rewards(self, paths):
         # path has two keys: observations and actions

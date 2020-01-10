@@ -77,27 +77,6 @@ class MBBaselineNaive(ReplayBufferBaseline):
         # model_loss = self.dynamics_model.fit(s, a, sp, self.model_batch_size, self.num_model_fit_iters)
 
         return model_loss, valid_loss
-        # for _ in range(self.num_model_fit_iters):
-        #     # batch = self.replay_buffer.get_sample(self.model_batch_size)
-        #     batch = self.replay_buffer.get_sample_safe(self.model_batch_size)
-        #     s = batch['observations'].detach()
-        #     a = batch['actions'].detach()
-        #     s_prime = batch['next_observations'].detach()
-
-        #     x = self.featurize_state_action(s, a)
-
-        #     # s_prime_hat = self.model_network(x)
-        #     self.model_optim.zero_grad()
-
-        #     s_prime_hat = s + self.model_network(x)
-
-        #     loss = F.mse_loss(s_prime_hat, s_prime)
-        #     loss.backward()
-        #     self.model_optim.step()
-
-        #     if _ % 100 == 0:
-        #         print(loss.item())
-
 
     def featurize_time(self, t):
         if type(t) == np.ndarray:
@@ -131,6 +110,7 @@ class MBBaselineNaive(ReplayBufferBaseline):
         for t_offset in range(self.H):
 
             # TODO: use mean action?
+            # TODO: Aravind: add noise, multiple rollouts averaged
             a = self.policy.get_action_pytorch(s).detach()
             # t = time + t_offset
             
@@ -186,12 +166,13 @@ class MBBaselineNaive(ReplayBufferBaseline):
             self.target_value_network.load_state_dict(self.value_network.state_dict())
 
 
-class MBBaseline(MBBaselineNaive):
+class MBBaselineDoubleV(ReplayBufferBaseline):
 
-    def __init__(self, dynamics_model, value_network, target_value_network, policy,
+    def __init__(self, dynamics_model, value_network, no_update_value_network, policy,
             reward_func, replay_buffer, H, T, gamma,
-            time_dim=3, model_batch_size=128, num_model_fit_iters=300, model_lr=1e-3,
-            bellman_batch_size=64, num_bellman_fit_iters=100, num_bellman_iters=10):
+            time_dim=3, lr=1e-3,
+            batch_size=64, num_bellman_fit_iters=100, num_bellman_iters=10,
+            reward_weight=1.0, value_weight=1.0):
         """
             In this version, we will assume all data in the RB is from the same policy
             This allows us to use s, a, s' in the replay buffer instead of 
@@ -203,7 +184,7 @@ class MBBaseline(MBBaselineNaive):
 
         self.dynamics_model = dynamics_model
         self.value_network = value_network
-        self.target_value_network = target_value_network
+        self.no_update_value_network = no_update_value_network
         self.policy = policy
         self.reward_func = reward_func
 
@@ -211,54 +192,109 @@ class MBBaseline(MBBaselineNaive):
         self.T = T
         self.gamma = gamma
         self.time_dim = time_dim
-        self.model_batch_size = model_batch_size
-        self.num_model_fit_iters = num_model_fit_iters
-        self.bellman_batch_size = bellman_batch_size
+        self.batch_size = batch_size
         self.num_bellman_fit_iters = num_bellman_fit_iters
         self.num_bellman_iters = num_bellman_iters
+        
+        self.reward_weight = reward_weight
+        self.value_weight = value_weight
 
         # should we pass optimizer in instead?
-        self.value_optim = torch.optim.Adam(self.value_network.parameters(), 5e-3)
+        self.shared_optim = torch.optim.Adam(list(self.value_network.parameters())
+            + list(self.dynamics_model.network.parameters()), lr)
+    
+    def featurize_time(self, t):
+        if type(t) == np.ndarray:
+            t = torch.from_numpy(t).float()
+        t = t.float()
+        t = (t+1.0)/self.T
+        t_feat = torch.stack([t**(k+1) for k in range(self.time_dim)], -1)
+        return t_feat
+
+    def featurize_state_time(self, state, time):
+        # normalize time
+        t = self.featurize_time(time)
+        x = torch.cat([state, t], -1)
+        return x
 
     def update(self):
         print('update')
 
-        for _ in self.num_bellman_iters:
+        for _ in range(self.num_bellman_iters):
             self.fit_custom_loss()
-            self.target_value_network.load_state_dict(self.value_network.state_dict())
-
+            self.no_update_value_network.load_state_dict(self.value_network.state_dict())
 
     def fit_custom_loss(self):
-        """ TODO:
-        s = np.concatenate([p['observations'][:-1] for p in self.replay_buffer.data_buffer])
-        a = np.concatenate([p['actions'][:-1] for p in self.replay_buffer.data_buffer])
-        s_next = np.concatenate([p['observations'][1:] for p in self.replay_buffer.data_buffer])
+        print('fit_custom_loss')
+        for i in range(self.num_bellman_fit_iters):
+            # get samples
+            samples = self.replay_buffer.get_sample_safe(self.batch_size)
+            s = samples['observations'].detach()
+            a = samples['actions'].detach()
+            s_next = samples['next_observations'].detach()
+            t = samples['time'].detach()
 
-        if set_transforms:
-            delta = s_next - s
-            s_mean, s_sigma = torch.mean(s, dim=0), torch.std(s, dim=0)
-            a_mean, a_sigma = torch.mean(a, dim=0), torch.std(a, dim=0)
-            out_mean, out_sigma = torch.mean(delta, dim=0), torch.std(delta, dim=0)
-            nn_model.set_transformations(s_mean, s_sigma, a_mean, a_sigma, out_mean, out_sigma)
+            s_next_hat = self.dynamics_model.network(s, a)
 
-        num_samples = s.shape[0]
-        epoch_losses = []
-        for ep in tqdm(range(epochs)):
-            rand_idx = torch.LongTensor(np.random.permutation(num_samples)).to(device)
-            ep_loss = 0.0
-            num_steps = int(num_samples // batch_size)
-            for mb in range(num_steps):
-                data_idx = rand_idx[mb*batch_size:(mb+1)*batch_size]
-                batch_s  = s[data_idx]
-                batch_a  = a[data_idx]
-                batch_sp = s_next[data_idx]
-                optimizer.zero_grad()
-                sp_hat   = nn_model.forward(batch_s, batch_a)
-                loss = loss_func(sp_hat, batch_sp)
-                loss.backward()
-                optimizer.step()
-                ep_loss += loss.to('cpu').data.numpy()
-            epoch_losses.append(ep_loss * 1.0/num_steps)
-        # print("Loss after 1 epoch = %f | Loss after %i epochs = %f" % (epoch_losses[0], epochs, epoch_losses[-1]))
-        return epoch_losses
-        """
+            a_next = self.policy.get_action_pytorch(s_next) #TODO: Noise?
+            # construct losses
+            reconstruction_loss = F.mse_loss(s_next_hat, s_next)
+            reward_loss = F.mse_loss(self.reward_func(s_next_hat, a_next), self.reward_func(s_next, a_next))
+
+            #TODO: try below as well
+            # a_next_hat = self.policy.get_action_pytorch(s_next_hat)
+            # reward_loss = F.mse_loss(self.reward_func(s_next_hat, a_next_hat), self.reward_func(s_next, a_next))
+
+            x = self.featurize_state_time(s, t)
+            xp = self.featurize_state_time(s_next_hat, t+1)
+            V_hat = self.value_network(x)
+            target = self.reward_func(s, a).view(-1, 1) + self.gamma * self.value_network(xp)
+            value_loss = F.mse_loss(V_hat, target)
+
+            self.shared_optim.zero_grad()
+            total_loss = reconstruction_loss + self.reward_weight * reward_loss + self.value_weight * value_loss
+            total_loss.backward()
+            self.shared_optim.step()
+
+            if i % 25 == 0:
+                print('recon', reconstruction_loss.item(), 'rew', reward_loss.item(), 'value', value_loss.item())
+
+    def value_no_model(self, state, time):
+        x = self.featurize_state_time(state, time)
+        return self.value_network(x)
+
+    def value(self, state, time, use_average=False, n_rollouts=4, add_tvf=True):
+        if use_average:
+            s = state
+            value = np.zeros(state.size(0))
+            for t_offset in range(self.H):
+
+                a = self.policy.get_action_pytorch(s, mean_action=True).detach()
+                # t = time + t_offset
+                
+                value += self.gamma ** t_offset * self.reward_func(s.detach().numpy(), a.numpy()).reshape(-1)
+
+                s = self.dynamics_model.network(s, a)
+            if add_tvf:
+                return torch.from_numpy(value).float().view(-1, 1) + self.gamma**self.H * self.value_no_model(s, time+self.H).detach()
+            else:
+                return torch.from_numpy(value).float().view(-1, 1)
+        else:
+            total_value = torch.zeros(state.size(0), 1)
+            for r in range(n_rollouts):
+                s = state
+                value = np.zeros(state.size(0))
+                for t_offset in range(self.H):
+
+                    a = self.policy.get_action_pytorch(s, mean_action=False).detach()
+                    
+                    value += self.gamma ** t_offset * self.reward_func(s.detach().numpy(), a.numpy()).reshape(-1)
+
+                    s = self.dynamics_model.network(s, a)
+
+                if add_tvf:
+                   single_val = torch.from_numpy(value).float().view(-1, 1) + self.gamma ** self.H * self.value_no_model(s, time + self.H).detach()
+                else:
+                    single_val = torch.from_numpy(value).float().view(-1, 1)
+            total_value += single_val
+            return total_value / n_rollouts

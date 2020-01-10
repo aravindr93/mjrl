@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import mjrl.utils.tensor_utils as tensor_utils
-
+from mjrl.utils.process_samples import compute_returns
 
 class TrajectoryReplayBuffer:
     def __init__(self, max_paths=-1, device='cpu'):
@@ -12,6 +12,11 @@ class TrajectoryReplayBuffer:
         self.device = device
 
     def push_many(self, paths):
+        for path in paths:
+            self.push(path)
+
+    def push_many_with_returns(self, paths, gamma):
+        compute_returns(paths, gamma)
         for path in paths:
             self.push(path)
 
