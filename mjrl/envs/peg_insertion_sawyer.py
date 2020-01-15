@@ -8,7 +8,7 @@ class PegEnv(mujoco_env.MujocoEnv, utils.EzPickle):
     def __init__(self):
         self.peg_sid = -2
         self.target_sid = -1
-        mujoco_env.MujocoEnv.__init__(self, 'peg_insertion.xml', 2)
+        mujoco_env.MujocoEnv.__init__(self, 'peg_insertion.xml', 4)
         utils.EzPickle.__init__(self)
         self.peg_sid = self.model.site_name2id("peg_bottom")
         self.target_sid = self.model.site_name2id("target")
@@ -114,4 +114,4 @@ class PegEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         self.viewer = MjViewer(self.sim)
         self.viewer.cam.azimuth += 200
         self.sim.forward()
-        self.viewer.cam.distance = self.model.stat.extent*1.2
+        self.viewer.cam.distance = self.model.stat.extent*2.0
