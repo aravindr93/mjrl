@@ -36,7 +36,8 @@
 'policy_size'   :   (32, 32),
 'inner_steps'   :   10,
 'step_size'     :   0.05,
-'update_paths'  :   100,
+'update_paths'  :   250,
+'horizon'       :   10,   
 'hvp_frac'      :   None,
 
 }
