@@ -147,7 +147,21 @@ for outer_iter in range(job_data['num_iter']):
     # ======================
     agent.fitted_model = models
     for inner_step in range(job_data['inner_steps']):
-        agent.train_step(N=job_data['update_paths'])
+        # Healthy mix for initial states : half of them come from the MDP initial 
+        # state distribution and the remaining half comes from the replay buffer,
+        # chosen uniformly at random. Buffer already concatenated into numpy array 
+        # for model learning (s, a, sp, r)
+        if job_data['device_path'] is None:
+            # can only do this for non-hardware tasks
+            num_states_1, num_states_2 = job_data['update_paths'] // 2, job_data['update_paths'] // 2
+            buffer_rand_idx = np.random.choice(s.shape[0], size=num_states_2, replace=True)
+            init_states_1 = [e.reset() for _ in range(num_states_1)]
+            init_states_2 = list(s[buffer_rand_idx])
+            init_states = init_states_1 + init_states_2
+        else:
+            buffer_rand_idx = np.random.choice(s.shape[0], size=job_data['update_paths'], replace=True)
+            init_states = list(s[buffer_rand_idx])
+        agent.train_step(N=len(init_states), init_states=init_states, horizon=job_data['horizon'])
         print_data = sorted(filter(lambda v: np.asarray(v[1]).size == 1,
                                    agent.logger.get_current_log().items()))
         print(tabulate(print_data))

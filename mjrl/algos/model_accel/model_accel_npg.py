@@ -61,6 +61,8 @@ class ModelAccelNPG(NPG):
                    gae_lambda=0.97,
                    num_cpu='max',
                    env_kwargs=None,
+                   init_states=None,
+                   **kwargs,
                    ):
 
         ts = timer.time()
@@ -82,10 +84,11 @@ class ModelAccelNPG(NPG):
         # we want to use the same task instances (e.g. goal locations) for each model in ensemble
         paths = []
 
-        # NOTE: When running on hardware, we need to load the set of initial states from a pickle file
-        # init_states = pickle.load(open(<some_file>.pickle, 'rb'))
-        # init_states = init_states[:N]
-        init_states = np.array([env.reset() for _ in range(N)])
+        # NOTE: We can optionally specify a set of initial states to perform the rollouts from
+        # This is useful for starting rollouts from the states in the replay buffer
+        init_states = np.array([env.reset() for _ in range(N)]) if init_states is None else init_states
+        assert type(init_states) == list
+        assert len(init_states) == N
 
         for model in self.fitted_model:
             # dont set seed explicitly -- this will make rollouts follow tne global seed
