@@ -8,7 +8,7 @@ class Reacher7DOFEnv(mujoco_env.MujocoEnv, utils.EzPickle):
     def __init__(self):
         self.hand_sid = -2
         self.target_sid = -1
-        mujoco_env.MujocoEnv.__init__(self, 'sawyer.xml', 2)
+        mujoco_env.MujocoEnv.__init__(self, 'sawyer.xml', 4)
         utils.EzPickle.__init__(self)
         self.hand_sid = self.model.site_name2id("finger")
         self.target_sid = self.model.site_name2id("target")
@@ -22,7 +22,7 @@ class Reacher7DOFEnv(mujoco_env.MujocoEnv, utils.EzPickle):
     def get_obs(self):
         return np.concatenate([
             self.data.qpos.flat,
-            self.data.qvel.flat,
+            self.data.qvel.ravel() * self.dt,       # delta_x instead of velocity
             self.data.site_xpos[self.hand_sid],
             self.data.site_xpos[self.target_sid],
         ])

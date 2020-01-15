@@ -19,13 +19,13 @@ register(
 register(
     id='mjrl_reacher_7dof-v0',
     entry_point='mjrl.envs:Reacher7DOFEnv',
-    max_episode_steps=75,
+    max_episode_steps=50,
 )
 
 register(
     id='mjrl_peg_insertion-v0',
     entry_point='mjrl.envs:PegEnv',
-    max_episode_steps=75,
+    max_episode_steps=50,
 )
 
 from mjrl.envs.mujoco_env import MujocoEnv
