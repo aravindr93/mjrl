@@ -8,6 +8,10 @@ import mjrl.envs
 import gym
 import mj_envs
 import time as timer
+
+import os
+from shutil import copyfile
+
 SEED = 500
 
 e = GymEnv('pen-v0')
@@ -15,11 +19,18 @@ policy = MLP(e.spec, hidden_sizes=(128,128), seed=SEED, init_log_std=-0.5)
 baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=64, epochs=2, learn_rate=1e-3)
 agent = NPG(e, policy, baseline, normalized_step_size=0.05, seed=SEED, save_logs=True)
 
-ts = timer.time()
-train_agent(job_name='npg_pen_exp_3',
+ts=timer.time()
+
+job_name='/home/ben/data/npg/pen/k3_exp_0'
+
+cur_file = os.path.realpath(__file__)
+os.mkdir(job_name)
+copyfile(cur_file, os.path.join(job_name, 'source.py'))
+
+train_agent(job_name=job_name,
             agent=agent,
             seed=SEED,
-            niter=300,
+            niter=500,
             gamma=0.99,
             gae_lambda=0.97,
             num_cpu=4,

@@ -14,12 +14,13 @@ class SharedFeaturesBaseline(Baseline):
     def __init__(self, state_dim, action_dim, time_dim, replay_buffers, policy, T,
                 feature_size=64, hidden_sizes=(64, 64), both_lr=1e-3, shared_lr=1e-3, linear_lr=1e-3, both_bellman_lr=1e-3, target_minibatch_size=64,
                 num_fit_iters=200, num_bellman_iters=10, num_bellman_fit_iters=200, bellman_minibatch_size=64,
-                bias=True, gamma=0.95, total_loss_weight=1.0, device='cpu'):
+                bias=True, gamma=0.95, total_loss_weight=1.0, device='cpu', max_replay_buffers=-1):
         self.time_dim = time_dim
         self.replay_buffers = replay_buffers
         self.policy = policy
         self.T = T
         self.K = len(replay_buffers)
+        self.max_replay_buffers = max_replay_buffers
         self.feature_size = feature_size
         self.bias = bias
         self.shared_lr = shared_lr
@@ -48,12 +49,12 @@ class SharedFeaturesBaseline(Baseline):
         for weight in self.linear_q_weights:
             for param in weight.parameters():
                 self.all_params.append(param)
-        # self.both_optim=optim.Adam(list(self.shared_features_network.parameters()) + self.all_params, both_lr)
-        self.both_optim=optim.SGD(list(self.shared_features_network.parameters()) + self.all_params, both_lr, momentum=0.9)
+        self.both_optim=optim.Adam(list(self.shared_features_network.parameters()) + self.all_params, both_lr)
+        # self.both_optim=optim.SGD(list(self.shared_features_network.parameters()) + self.all_params, both_lr, momentum=0.9)
     
     def featurize_time(self, t):
         if type(t) == np.ndarray:
-            t = torch.from_numpy(t).float()
+            t = torch.from_numpy(t).float().to(self.device)
         if self.time_dim == 0:
             return torch.zeros(t.shape[0], 0).to(self.device)
         t = t.float()
@@ -69,15 +70,25 @@ class SharedFeaturesBaseline(Baseline):
     def featurize_state_action_time(self, state, action, time):
         # normalize time
         t = self.featurize_time(time)
+
+        if type(state) == np.ndarray:
+            state = torch.from_numpy(state).to(self.device).float()
+        if type(action) == np.ndarray:
+            action = torch.from_numpy(action).to(self.device).float()
+
         x = torch.cat([state, action, t], -1)
         return x
     
-    def sample_replay_buffers(self, sample_size):
+    def sample_replay_buffers(self, sample_size, p=None):
         # TODO: this can be done more efficiently
         # sample the policies uniformly, then sample data from those policies uniformly
         # could do a weighted sample letting p = size(rb_i) / sum(size(rb_i))
         # could also prefer newer data
-        policies = np.random.choice(self.K, sample_size)
+        if p is None:
+            policies = np.random.choice(self.K, sample_size)
+        else:
+            policies = np.random.choice(self.K, sample_size, p=p)
+
         samples = []
         for policy in policies:
             # sample = self.replay_buffers[policy].get_sample_safe() #TODO: which to use here?
@@ -93,11 +104,14 @@ class SharedFeaturesBaseline(Baseline):
         
         return all_samples, policies
 
-    def sample_replay_buffers_efficient(self, sample_size):
+    def sample_replay_buffers_efficient(self, sample_size, p=None):
         # sample the policies uniformly, then sample data from those policies uniformly
         # could do a weighted sample letting p = size(rb_i) / sum(size(rb_i))
         # could also prefer newer data
-        policies = np.random.choice(self.K, sample_size)
+        if p is None:
+            policies = np.random.choice(self.K, sample_size)
+        else:
+            policies = np.random.choice(self.K, sample_size, p=p)
         samples = []
 
         counts = np.zeros(self.K, dtype=int)
@@ -120,6 +134,7 @@ class SharedFeaturesBaseline(Baseline):
         return all_samples, counts
 
     def update_returns(self):
+        print('update_returns')
         losses = []
 
         total_sample_time = 0.0
@@ -147,14 +162,19 @@ class SharedFeaturesBaseline(Baseline):
 
             idx = 0
             for i in range(self.K):
+                # print('i, idx', i, idx)
                 count = counts[i]
                 linear_weight = self.linear_q_weights[i]
                 pred = linear_weight(shared_features[idx:idx+count])
-                loss = F.mse_loss(returns[idx:idx+count].view(-1, 1), pred, reduction='sum')
+                loss = F.mse_loss(pred, returns[idx:idx+count].view(-1, 1), reduction='sum')
                 idx += count
+                # print('loss', loss.item())
                 total_loss += loss
             
+            # print('total_loss', total_loss)
             total_loss = total_loss / self.target_minibatch_size
+
+            # import ipdb; ipdb.set_trace()
 
             total_loss_time += (time.time() - start_time)
 
@@ -162,19 +182,25 @@ class SharedFeaturesBaseline(Baseline):
             losses.append(total_loss.item())
             self.both_optim.step()
 
-            if _ % 100 == 0:
+            if _ % 250 == 0:
                 print(total_loss.item())
 
                 # print('sample', total_sample_time, 'loss', total_loss_time)
-        print('sample time', total_sample_time, 'loss time', total_loss_time)
+        # print('sample time', total_sample_time, 'loss time', total_loss_time)
         return dict(losses=losses)
 
     def new_replay_buffer(self, replay_buffer, copy_latest=False):
         self.replay_buffers.append(replay_buffer)
         self.linear_q_weights.append(torch.nn.Linear(self.feature_size, 1, bias=self.bias).to(self.device))
         self.K += 1
-        if copy_latest:
+        if copy_latest and len(self.linear_q_weights) > 1:
             self.linear_q_weights[-1].load_state_dict(self.linear_q_weights[-2].state_dict())
+
+        if self.max_replay_buffers > 0 and self.K > self.max_replay_buffers:
+            del self.replay_buffers[0]
+            del self.linear_q_weights[0]
+            self.K -= 1
+
 
         self.all_params = []
         for weight in self.linear_q_weights:
@@ -196,9 +222,30 @@ class SharedFeaturesBaseline(Baseline):
 
         return pred
     
-    def value(self, state, time, target_network=False):
-        action = self.policy.get_action_pytorch(state).detach().to(self.device)
-        return self.q_value(state, action, time, target_network=target_network)
+    def predict(self, s, a, t):
+        
+        # import ipdb; ipdb.set_trace()
+
+        return self.q_value(s, a, t)        
+
+    # TODO: make use_mu_approx, n_value hyperparameters
+    def value(self, state, time, target_network=False, use_mu_approx=True, n_value=1):
+        if use_mu_approx:
+            action = self.policy.get_action_pytorch(state, mean_action=True).detach().to(self.device)
+            return self.q_value(state, action, time, target_network=target_network)
+        else:
+            values = None
+            for _ in range(n_value):
+                action = self.policy.get_action_pytorch(state).detach().to(self.device)
+                if values is None:
+                    values = self.q_value(state, action, time, target_network=target_network)
+                else:
+                    values += self.q_value(state, action, time, target_network=target_network)
+            return values / n_value
+
+    def advantage(self, state, action, time, use_mu_approx=True, n_value=1):
+        return self.q_value(state, action, time) - self.value(state, time, use_mu_approx=use_mu_approx, n_value=n_value)
+
 
     def compute_bellman_targets(self, samples):
         next_s = samples['next_observations']
@@ -292,23 +339,25 @@ class SharedFeaturesBaseline(Baseline):
         return losses
 
     def update_bellman_both_regularized(self):
-        all_losses = []
+        update_stats = dict(losses=[], bellman_losses=[], reg_losses=[])
         for _ in range(self.num_bellman_iters):
-            losses = self.fit_targets_both_regularized()
+            losses, bellman_losses, reg_losses = self.fit_targets_both_regularized()
             self.target_shared_features_network.load_state_dict(self.shared_features_network.state_dict())
             self.target_policy_linear.load_state_dict(self.policy_linear.state_dict())
-            all_losses.append(losses)
-        return all_losses
+            update_stats['losses'].append(losses)
+            update_stats['bellman_losses'].append(bellman_losses)
+            update_stats['reg_losses'].append(reg_losses)
+        return update_stats
 
     def fit_targets_both_regularized(self):
         print('fit_targets_both_regularized')
-        # all_optim = optim.Adam(list(self.shared_features_network.parameters()) +
-        #     list(self.policy_linear.parameters()) +
-        #     self.all_params, self.both_bellman_lr)
-
-        all_optim = optim.SGD(list(self.shared_features_network.parameters()) +
+        all_optim = optim.Adam(list(self.shared_features_network.parameters()) +
             list(self.policy_linear.parameters()) +
             self.all_params, self.both_bellman_lr)
+
+        # all_optim = optim.SGD(list(self.shared_features_network.parameters()) +
+        #     list(self.policy_linear.parameters()) +
+        #     self.all_params, self.both_bellman_lr)
 
         losses = []
         bellman_losses = []
@@ -374,10 +423,14 @@ class SharedFeaturesBaseline(Baseline):
             total_loss_time += (after_total_time - after_bellman_time)
             other_time += (end_time - after_total_time)
         
-        print('sample_time', sample_time)
-        print('targets_time', targets_time)
-        print('bellman_loss_time', bellman_loss_time)
-        print('total_loss_time', total_loss_time)
-        print('other_time', other_time)
+        # print('sample_time', sample_time)
+        # print('targets_time', targets_time)
+        # print('bellman_loss_time', bellman_loss_time)
+        # print('total_loss_time', total_loss_time)
+        # print('other_time', other_time)
 
         return losses, bellman_losses, reg_losses
+
+    def set_weight_newest(self):
+        self.policy_linear.load_state_dict(self.linear_q_weights[-1].state_dict())
+        self.target_policy_linear.load_state_dict(self.linear_q_weights[-1].state_dict())

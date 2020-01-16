@@ -13,15 +13,15 @@ from shutil import copyfile
 
 SEED = 500
 
-e = GymEnv('Hopper-v2')
-policy = MLP(e.spec, hidden_sizes=(32,32), seed=SEED, init_log_std=-0.5)
+e = GymEnv('Ant-v2')
+policy = MLP(e.spec, hidden_sizes=(32,32), seed=SEED, init_log_std=-2)
 baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=64, epochs=2, learn_rate=1e-3)
-agent = NPG(e, policy, baseline, normalized_step_size=0.05, seed=SEED, save_logs=True)
+agent = NPG(e, policy, baseline, normalized_step_size=0.1, seed=SEED, save_logs=True)
 
 ts=timer.time()
 
 
-job_name='/home/ben/data/npg/hopper/k4_exp_0'
+job_name='/home/ben/data/npg/ant/k3_exp_4'
 
 cur_file = os.path.realpath(__file__)
 os.mkdir(job_name)
@@ -30,12 +30,12 @@ copyfile(cur_file, os.path.join(job_name, 'source.py'))
 train_agent(job_name=job_name,
             agent=agent,
             seed=SEED,
-            niter=100,
+            niter=200,
             gamma=0.995,
             gae_lambda=0.97,
             num_cpu=4,
             sample_mode='samples',
-            num_samples=10 * 1000,
+            num_samples=5 * 1000,
             save_freq=10,
             evaluation_rollouts=5,
             plot_keys=['stoc_pol_mean', 'eval_score', 'running_score', 'samples'])

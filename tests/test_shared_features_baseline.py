@@ -74,7 +74,7 @@ if __name__ == '__main__':
     TARGET_MB_SIZE = 512
     BELLMAN_MB = 256
     time_dim = 0
-    FIT_ITERS = 10000
+    FIT_ITERS = 1000
     BELLMAN_FIT_ITERS = 500
     BELLMAN_ITERS = 20
 
