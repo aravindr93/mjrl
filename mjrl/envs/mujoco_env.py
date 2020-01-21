@@ -41,7 +41,7 @@ class MujocoEnv(gym.Env):
         self.init_qvel = self.data.qvel.ravel().copy()
         try:
             observation, _reward, done, _info = self.step(np.zeros(self.model.nu))
-        except:
+        except NotImplementedError:
             observation, _reward, done, _info = self._step(np.zeros(self.model.nu))
         assert not done
         self.obs_dim = np.sum([o.size for o in observation]) if type(observation) is tuple else observation.size
@@ -148,10 +148,13 @@ class MujocoEnv(gym.Env):
             o = self.reset()
             d = False
             t = 0
+            score = 0.0
             while t < horizon and d is False:
                 a = policy.get_action(o)[0] if mode == 'exploration' else policy.get_action(o)[1]['evaluation']
                 o, r, d, _ = self.step(a)
                 t = t+1
+                score = score + r
+            print("Episode score = %f" % score)
         self.mujoco_render_frames = False
 
     def visualize_policy_offscreen(self, policy, horizon=1000,

@@ -30,6 +30,7 @@ class NPG(BatchREINFORCE):
                  save_logs=False,
                  kl_dist=None,
                  input_normalization=None,
+                 **kwargs
                  ):
         """
         All inputs are expected in mjrl's format unless specified

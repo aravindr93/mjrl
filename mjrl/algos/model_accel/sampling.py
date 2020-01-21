@@ -19,6 +19,7 @@ def policy_rollout(
         policy,
         fitted_model,
         init_state=None,
+        init_times=None,
         eval_mode=False,
         horizon=1e6,
         env_kwargs=None,
@@ -51,26 +52,41 @@ def policy_rollout(
     else:
         print("Unsupported format for init state")
         quit()
+    
+    if type(init_times) == list:
+        init_times = np.array(init_times)
 
     # perform batched rollouts
     horizon = min(horizon, env.horizon)
     obs = []
     act = []
+    time = []
     for t in range(horizon):
         at = policy.model.forward(st)
         if eval_mode is not True:
-            at = at + torch.randn(at.shape) * torch.exp(policy.log_std)
+            at = at + torch.randn(at.shape).to(at.device) * torch.exp(policy.log_std)
         stp1 = fitted_model.forward(st, at)
         obs.append(st.to('cpu').data.numpy())
         act.append(at.to('cpu').data.numpy())
+        if init_times is not None:
+            time.append(init_times + t)
         st = stp1
 
     obs = np.array(obs)
     obs = np.swapaxes(obs, 0, 1)  # (num_traj, horizon, state_dim)
     act = np.array(act)
     act = np.swapaxes(act, 0, 1)  # (num_traj, horizon, action_dim)
+    
     paths = dict(observations = obs,
                  actions = act)
+
+    if init_times is not None:
+        time = np.array(time)
+        time = np.swapaxes(time, 0, 1)
+        paths['time'] = time
+
+    paths['is_terminal'] = np.zeros_like(paths['time'])
+    paths['is_terminal'][time >= env.horizon - 1] = 1
 
     return paths
 

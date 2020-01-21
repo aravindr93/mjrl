@@ -19,9 +19,9 @@ class BC:
                  batch_size = 64,
                  lr = 1e-3,
                  optimizer = None,
-                 loss_type = 'MLE',  # can be 'MLE' or 'MSE'
+                 loss_type = 'MSE',  # can be 'MLE' or 'MSE'
                  save_logs = True,
-                 transforms = False,
+                 set_transforms = False,
                  ):
 
         self.policy = policy
@@ -32,9 +32,10 @@ class BC:
         self.loss_type = loss_type
         self.save_logs = save_logs
 
-        if transforms:
+        if set_transforms:
             in_shift, in_scale, out_shift, out_scale = self.compute_transformations()
-            self.set_transformations(in_shift, in_scale, out_shift=out_shift, out_scale=out_scale)
+            self.set_transformations(in_shift, in_scale, out_shift, out_scale)
+            self.set_variance_with_data(out_scale)
 
         # construct optimizer
         self.optimizer = torch.optim.Adam(self.policy.trainable_params, lr=lr) if optimizer is None else optimizer
@@ -140,7 +141,7 @@ class BC:
         self.fit(data, **kwargs)
 
 
-def config_tqdm(range_inp, suppress_tqdm=True):
+def config_tqdm(range_inp, suppress_tqdm=False):
     if suppress_tqdm:
         return range_inp
     else:

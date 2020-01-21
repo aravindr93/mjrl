@@ -27,7 +27,9 @@ class PPO(BatchREINFORCE):
                  mb_size = 64,
                  learn_rate = 3e-4,
                  seed = 123,
-                 save_logs = False):
+                 save_logs = False,
+                 **kwargs
+                 ):
 
         self.env = env
         self.policy = policy

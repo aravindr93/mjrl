@@ -14,6 +14,21 @@ class TrajectoryReplayBuffer:
     def push_many(self, paths):
         for path in paths:
             self.push(path)
+    
+    def push_many_temp(self, paths):
+        self.tmp_add_paths = len(paths)
+        self.tmp_buffer_idx = self.buffer['observations'].shape[0]
+        self.push_many(paths)
+    
+    def pop_temp(self):
+        if self.tmp_buffer_idx < 0:
+            return    
+    
+        for k in self.buffer.keys():
+            self.buffer[k] = self.buffer[k][:self.tmp_buffer_idx]
+        self.data_buffer = self.data_buffer[:self.tmp_add_paths]
+
+        self.tmp_add_paths = -1
 
     def push_many_with_returns(self, paths, gamma):
         compute_returns(paths, gamma)
@@ -38,14 +53,53 @@ class TrajectoryReplayBuffer:
 
     def get_sample(self, sample_size=1):
         sample_idx = np.random.choice(self.buffer['observations'].shape[0], sample_size)
+        # import ipdb; ipdb.set_trace()
         sample = dict()
         for k in self.buffer.keys():
             if type(self.buffer[k]) != dict:
                 sample[k] = self.buffer[k][sample_idx]
-        next_idx = np.clip(sample_idx + 1, 0, self.buffer['observations'].shape[0]-1)
+        next_idx = np.clip(sample_idx + 1, 0, self.buffer['observations'].shape[0] - 1)
         sample['next_observations'] = self.buffer['observations'][next_idx]
         return sample
     
+    def get_sample_starting_at_or_before(self, sample_size=1, t=1000):
+        samples = self.get_sample(sample_size=sample_size)
+
+        total_samples = (samples['time'] <= t).sum()
+        all_samples = [samples]
+
+        while total_samples < sample_size:
+            x = sample_size - int(total_samples.item())
+            more_samples = self.get_sample(sample_size=x)
+            total_samples += (more_samples['time'] <= t).sum()
+            all_samples.append(more_samples)
+        
+        return self.combine_and_remove_bad_time(all_samples, t)
+
+    def combine_and_remove_bad_time(self, samples, t):
+        # combine first into one tensor
+        all_samples = {}
+        for key in samples[0].keys():
+            all_samples[key] = torch.cat([a[key] for a in samples])
+
+        keep_idxs = torch.where(all_samples['time'] <= t)
+        
+        safe_samples = {}
+
+        for key in all_samples:
+            safe_samples[key] = all_samples[key][keep_idxs]
+
+        return safe_samples
+
+    
+    def sample_initial_states(self, sample_size=1):
+        sample_idx = np.random.choice(len(self.data_buffer), sample_size)
+        states = []
+        for sample in sample_idx:
+            path = self.data_buffer[sample]
+            states.append(path['observations'][0])
+        return states
+
     def combine_and_remove_terminal(self, samples):
         
         # combine first into one tensor
@@ -94,6 +148,9 @@ class TrajectoryReplayBuffer:
 
     def __getitem__(self, key):
         return self.buffer[key]
+
+    
+
 
 if __name__ == '__main__':
     from mjrl.policies.gaussian_mlp import MLP
