@@ -6,11 +6,11 @@
 'seed'          :   123,
 'debug_mode'    :   False,
 'num_iter'      :   5,
-'paths_per_iter':   5,
+'iter_samples'  :   100,
 'eval_rollouts' :   25,
 'num_models'    :   3,
 'exp_notes'     :   'Toy experiment for initial trial.',
-'save_freq'     :   5,
+'save_freq'     :   1,
 'device'        :   'cpu',
 
 # dynamics learning
@@ -19,7 +19,7 @@
 'activation'    :   'relu',
 'fit_lr'        :   1e-3,
 'fit_wd'        :   1e-5,
-'max_paths'     :   1000,
+'buffer_size'   :   10000,
 'fit_mb_size'   :   16,
 'fit_epochs'    :   25,
 'refresh_fit'   :   False,
@@ -27,9 +27,8 @@
 # initial data
 
 'init_log_std'  :   -0.5,
-'n_init_paths'  :   25,
-'use_demos'     :   False,
-'demo_file'     :   None,
+'min_log_std'   :   -2.0,
+'init_samples'  :   1000,
 
 # NPG params
 
@@ -37,7 +36,7 @@
 'inner_steps'   :   10,
 'step_size'     :   0.05,
 'update_paths'  :   250,
+'start_state'	:   'buffer',
 'horizon'       :   10,   
-'hvp_frac'      :   None,
 
 }

@@ -12,7 +12,7 @@ import time as timer
 import argparse
 import os
 import json
-import mjrl.samplers.core as trajectory_sampler
+import mjrl.samplers.core as sampler
 import mjrl.utils.tensor_utils as tensor_utils
 from tqdm import tqdm
 from tabulate import tabulate
@@ -48,27 +48,30 @@ EXP_FILE = OUT_DIR + '/job_data.json'
 SEED = job_data['seed']
 
 # base cases
-if 'num_models' not in job_data.keys():
-    job_data['num_models'] = 1
-if job_data['num_models'] == 1 or 'omega' not in job_data.keys():
-    job_data['omega'] = 0.0
 if 'eval_rollouts' not in job_data.keys():
     job_data['eval_rollouts'] = 0
 if 'save_freq' not in job_data.keys():
     job_data['save_freq'] = 10
-if 'device_path' not in job_data.keys():
-    job_data['device_path'] = None
 if 'device' not in job_data.keys():
     job_data['device'] = 'cpu'
-if 'policy_size' not in job_data.keys():
-    job_data['policy_size'] = (32, 32)
 if 'hvp_frac' not in job_data.keys():
     job_data['hvp_frac'] = 1.0
+if 'start_state' not in job_data.keys():
+    job_data['start_state'] = 'init'
+assert job_data['start_state'] in ['init', 'buffer']
 with open(EXP_FILE, 'w') as f:
     json.dump(job_data, f, indent=4)
 
 del(job_data['seed'])
 job_data['base_seed'] = SEED
+
+
+# ===============================================================================
+# Helper functions
+# ===============================================================================
+def buffer_size(paths_list):
+    return np.sum([p['observations'].shape[0]-1 for p in paths_list])
+
 
 # ===============================================================================
 # Train loop
@@ -83,7 +86,10 @@ e = GymEnv(ENV_NAME)
 e.set_seed(SEED)
 models = [DynamicsModel(state_dim=e.observation_dim, act_dim=e.action_dim, seed=SEED+i, **job_data)
           for i in range(job_data['num_models'])]
-policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'], init_log_std=job_data['init_log_std'], min_log_std=-2.5)
+policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'], 
+                init_log_std=job_data['init_log_std'], min_log_std=job_data['min_log_std'])
+if 'init_policy' in job_data.keys():
+    if job_data['init_policy'] != None: policy = pickle.load(open(job_data['init_policy'], 'rb'))
 baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=256, epochs=2,  learn_rate=1e-3,
                        use_gpu=(True if job_data['device'] == 'cuda' else False))
 # baseline = QuadraticBaseline(e.spec)
@@ -98,23 +104,13 @@ for outer_iter in range(job_data['num_iter']):
     print("================> ITERATION : %i " % outer_iter)
     print("Getting interaction data from real dynamics ...")
 
-    if outer_iter == 0:
-        iter_paths = trajectory_sampler.sample_paths(job_data['n_init_paths'], agent.env,
-                                                     agent.policy, eval_mode=False, base_seed=SEED)
-    else:
-        iter_paths = sample_paths(num_traj=job_data['paths_per_iter'],
-                                  env=agent.env, policy=agent.policy, eval_mode=False,
-                                  base_seed=SEED + outer_iter)
-
-    # reset the environment (good for hardware)
-    e.reset()
-
+    samples_to_collect = job_data['init_samples'] if outer_iter == 0 else job_data['iter_samples']
+    iter_paths = sampler.sample_data_batch(samples_to_collect, agent.env, 
+                    agent.policy, eval_mode=False, base_seed=SEED + outer_iter)
     for p in iter_paths:
         paths.append(p)
-
-    if len(paths) > job_data['max_paths']:
-        diff = len(paths) - job_data['max_paths']
-        paths[:diff] = []
+    while buffer_size(paths) > job_data['buffer_size']:
+        paths[:1] = []
 
     s = np.concatenate([p['observations'][:-1] for p in paths])
     a = np.concatenate([p['actions'][:-1] for p in paths])
@@ -147,20 +143,19 @@ for outer_iter in range(job_data['num_iter']):
     # ======================
     agent.fitted_model = models
     for inner_step in range(job_data['inner_steps']):
+        if job_data['start_state'] == 'init':
+            init_states = [e.reset() for _ in range(job_data['update_paths'])]
+        else:
         # Healthy mix for initial states : half of them come from the MDP initial 
         # state distribution and the remaining half comes from the replay buffer,
         # chosen uniformly at random. Buffer already concatenated into numpy array 
         # for model learning (s, a, sp, r)
-        if job_data['device_path'] is None:
-            # can only do this for non-hardware tasks
             num_states_1, num_states_2 = job_data['update_paths'] // 2, job_data['update_paths'] // 2
             buffer_rand_idx = np.random.choice(s.shape[0], size=num_states_2, replace=True)
             init_states_1 = [e.reset() for _ in range(num_states_1)]
             init_states_2 = list(s[buffer_rand_idx])
             init_states = init_states_1 + init_states_2
-        else:
-            buffer_rand_idx = np.random.choice(s.shape[0], size=job_data['update_paths'], replace=True)
-            init_states = list(s[buffer_rand_idx])
+
         agent.train_step(N=len(init_states), init_states=init_states, horizon=job_data['horizon'])
         print_data = sorted(filter(lambda v: np.asarray(v[1]).size == 1,
                                    agent.logger.get_current_log().items()))
@@ -187,8 +182,6 @@ for outer_iter in range(job_data['num_iter']):
         pickle.dump(agent, open(OUT_DIR + '/agent_' + str(outer_iter) + '.pickle', 'wb'))
         pickle.dump(policy, open(OUT_DIR + '/policy_' + str(outer_iter) + '.pickle', 'wb'))
         agent.to(job_data['device'])
-        if job_data['device_path'] is not None:
-            pickle.dump(exp_data, open(OUT_DIR + '/data_' + str(outer_iter) + '.pickle', 'wb'))
 
     tf = timer.time()
     logger.log_kv('iter_time', tf-ts)
