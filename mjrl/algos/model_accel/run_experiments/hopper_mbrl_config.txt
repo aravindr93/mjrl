@@ -1,0 +1,44 @@
+{
+
+# general inputs
+
+'env_name'      :   'Hopper-v2',
+'seed'          :   123,
+'debug_mode'    :   False,
+'num_iter'      :   100,
+'iter_samples'  :   400,
+'eval_rollouts' :   5,
+'num_models'    :   4,
+'exp_notes'     :   'skip=10, H=400',
+'save_freq'     :   5,
+'device'        :   'cuda',
+
+# dynamics learning
+
+'hidden_size'   :   (256, 256),
+'activation'    :   'relu',
+'fit_lr'        :   1e-3,
+'fit_wd'        :   0.0,
+'buffer_size'   :   1e6,
+'fit_mb_size'   :   64,
+'fit_epochs'    :   10,
+'refresh_fit'   :   False,
+
+# initial data
+
+'init_log_std'  :   0.0,
+'min_log_std'   :   -2.0,
+'init_samples'  :   5000,
+'use_demos'     :   False,
+'demo_file'     :   None,
+
+# NPG params
+
+'policy_size'   :   (64, 64),
+'inner_steps'   :   2,
+'step_size'     :   0.05,
+'update_paths'  :   200,
+'horizon'       :   150,
+'start_state'   :   'buffer',
+
+}

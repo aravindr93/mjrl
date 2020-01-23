@@ -11,6 +11,8 @@ import numpy as np
 
 import copy
 
+import time
+
 # class MBBaselineNaive(ReplayBufferBaseline):
 
 #     def __init__(self, dynamics_model, value_network, target_value_network, policy,
@@ -202,6 +204,8 @@ class MBBaselineDoubleV(ReplayBufferBaseline):
         # should we pass optimizer in instead?
         self.shared_optim = torch.optim.Adam(list(self.value_network.parameters())
             + fitted_params, lr)
+
+        self.value_optim = torch.optim.Adam(self.value_network.parameters(), lr=1e-3)
     
     def featurize_time(self, t):
         if type(t) == np.ndarray:
@@ -221,7 +225,8 @@ class MBBaselineDoubleV(ReplayBufferBaseline):
         # print('update')
         all_stats = []
         for _ in range(self.num_bellman_iters):
-            all_stats.append(self.fit_custom_loss())
+            # all_stats.append(self.fit_custom_loss_max())
+            all_stats.append(self.fit_custom_loss_all()) # TODO: max or all? ALL! at least for only learning reward
             self.no_update_value_network.load_state_dict(self.value_network.state_dict())
         return all_stats
 
@@ -253,8 +258,7 @@ class MBBaselineDoubleV(ReplayBufferBaseline):
         returns = np.concatenate([path["returns"] for path in paths]).reshape(-1, 1)
         y = torch.from_numpy(returns).float().to(self.policy.device)
 
-        optim = torch.optim.Adam(self.value_network.parameters(), lr=1e-3)
-        ep_loss = fit_data(self.value_network, x, y, optim, F.mse_loss, mb_size, epochs)
+        ep_loss = fit_data(self.value_network, x, y, self.value_optim, F.mse_loss, mb_size, epochs)
         self.no_update_value_network.load_state_dict(self.value_network.state_dict())
 
         return [x.item() for x in ep_loss]
@@ -342,11 +346,10 @@ class MBBaselineDoubleV(ReplayBufferBaseline):
 
         return stats
 
-    def fit_custom_loss(self):
-        # print('fit_custom_loss')
-        sum_loss = 0.0
+    def fit_custom_loss_max(self):
+        # print('fit_custom_loss_max')
 
-        stats = dict(sum_total=0.0, sum_recon=0.0, sum_reward=0.0, sum_value=0.0)
+        stats = dict(sum_total=0.0, sum_recon=0.0, sum_reward=0.0, sum_value=0.0, used_models=[])   
 
         for i in range(self.num_bellman_fit_iters):
             # get samples
@@ -361,6 +364,7 @@ class MBBaselineDoubleV(ReplayBufferBaseline):
             recon_losses = []
             reward_losses = []
             value_losses = []
+
             for model in self.fitted_model:
                 s_next_hat = model.network(s,a)
 
@@ -397,12 +401,11 @@ class MBBaselineDoubleV(ReplayBufferBaseline):
             loss = total_losses[max_loss]
             loss.backward()
 
-            sum_loss += loss.item()
-
             stats['sum_total'] += loss.item()
             stats['sum_recon'] += recon_losses[max_loss].item()
             stats['sum_reward'] += reward_losses[max_loss].item()
             stats['sum_value'] += value_losses[max_loss].item()
+            stats['used_models'].append(max_loss)
 
             self.shared_optim.step()
 
@@ -411,7 +414,115 @@ class MBBaselineDoubleV(ReplayBufferBaseline):
             #     print('max loss model', max_loss)
         
         for k in stats.keys():
-            stats[k] /= self.num_bellman_fit_iters
+            if k.startswith('sum'):
+                stats[k] /= self.num_bellman_fit_iters
+
+        return stats
+
+    def fit_custom_loss_all(self):
+        # print('fit_custom_loss_all')
+
+        stats = dict(sum_total=0.0, sum_recon=0.0, sum_reward=0.0, sum_value=0.0, used_models=[])   
+
+        sample_time = 0.0
+        recon_loss_time = 0.0
+        reward_time = 0.0
+        value_time = 0.0
+        construct_loss_time = 0.0
+        backward_time = 0.0
+
+        for i in range(self.num_bellman_fit_iters):
+
+            total_losses = []
+            recon_losses = []
+            reward_losses = []
+            value_losses = []
+
+            for model in self.fitted_model:
+                # get samples
+                start = time.time()
+                samples = self.replay_buffer.get_sample_safe(self.batch_size)
+                s = samples['observations'].detach()
+                a = samples['actions'].detach()
+                s_next = samples['next_observations'].detach()
+                t = samples['time'].detach()
+                
+                sample_time += time.time() - start
+                
+                start = time.time()
+                s_next_hat = model.network(s,a)
+
+                a_next = self.policy.get_action_pytorch(s_next) #TODO: Noise?
+                # construct losses
+                reconstruction_loss = F.mse_loss(s_next_hat, s_next)
+
+                recon_loss_time += time.time() - start
+
+                start = time.time()
+                if self.reward_weight != 0.0:
+                    reward_loss = F.mse_loss(self.reward_func(s_next_hat, a_next), self.reward_func(s_next, a_next))
+                else:
+                    reward_loss = torch.zeros(())
+
+                reward_time += time.time() - start
+                #TODO: try below as well
+                # a_next_hat = self.policy.get_action_pytorch(s_next_hat)
+                # reward_loss = F.mse_loss(self.reward_func(s_next_hat, a_next_hat), self.reward_func(s_next, a_next))
+
+                start = time.time()
+                if self.value_weight != 0.0:
+                    x = self.featurize_state_time(s, t)
+                    xp = self.featurize_state_time(s_next_hat, t + 1)  # NEW: add detach here?
+                                                                        # TODO: try average value over models (same state)
+                    V_hat = self.value_network(x)
+                    target = self.reward_func(s, a).view(-1, 1) + self.gamma * self.value_network(xp)
+                    # target = self.reward_func(s, a).view(-1, 1) + self.gamma * self.no_update_value_network(xp)
+                    value_loss = F.mse_loss(V_hat, target)
+                else:
+                    value_loss = torch.zeros(())
+
+                value_time += time.time() - start
+
+                start = time.time()
+                self.shared_optim.zero_grad()
+                total_loss = reconstruction_loss + self.reward_weight * reward_loss + self.value_weight * value_loss
+                total_losses.append(total_loss)
+
+                recon_losses.append(reconstruction_loss)
+                reward_losses.append(reward_loss)
+                value_losses.append(value_loss)
+
+                construct_loss_time += time.time() - start
+
+            start = time.time()
+            all_recon_loss = torch.stack(recon_losses).sum()
+            all_reward_loss = torch.stack(reward_losses).sum()
+            all_value_loss = torch.stack(value_losses).sum()
+            
+            all_model_loss = torch.stack(total_losses).sum()
+            all_model_loss.backward()
+            backward_time += time.time() - start
+            stats['sum_total'] += all_model_loss.item() / len(self.fitted_model)
+            stats['sum_recon'] += all_recon_loss.item() / len(self.fitted_model)
+            stats['sum_reward'] += all_reward_loss.item() / len(self.fitted_model)
+            stats['sum_value'] += all_value_loss.item() / len(self.fitted_model)
+
+            self.shared_optim.step()
+
+            # if i % 25 == 0:
+            #     print('recon', reconstruction_loss.item(), 'rew', reward_loss.item(), 'value', value_loss.item())
+            #     print('max loss model', max_loss)
+        
+        for k in stats.keys():
+            if k.startswith('sum'):
+                stats[k] /= self.num_bellman_fit_iters
+
+        # print('sample_time', sample_time)
+        # print('recon_loss_time', recon_loss_time)
+        # print('reward_time', reward_time)
+        # print('value_time', value_time)
+        # print('construct_loss_time', construct_loss_time)
+        # print('backward_time', backward_time)
 
         return stats
 
@@ -511,7 +622,7 @@ class MBBaselineDoubleV(ReplayBufferBaseline):
                 a = self.policy.get_action_pytorch(s, mean_action=True).detach()
                 # t = time + t_offset
                 
-                value += self.gamma ** t_offset * self.reward_func(s.detach().numpy(), a.numpy()).reshape(-1)
+                value += self.gamma ** t_offset * self.reward_func(s.detach().cpu().numpy(), a.cpu().numpy()).reshape(-1)
 
                 s = self.dynamics_model.network(s, a)
             if add_tvf:
@@ -527,13 +638,36 @@ class MBBaselineDoubleV(ReplayBufferBaseline):
 
                     a = self.policy.get_action_pytorch(s, mean_action=False).detach()
                     
-                    value += self.gamma ** t_offset * self.reward_func(s.detach().numpy(), a.numpy()).reshape(-1)
+                    value += self.gamma ** t_offset * self.reward_func(s.detach().cpu().numpy(), a.cpu().numpy()).reshape(-1)
 
                     s = self.dynamics_model.network(s, a)
 
                 if add_tvf:
-                   single_val = torch.from_numpy(value).float().view(-1, 1) + self.gamma ** self.H * self.value_no_model(s, time + self.H).detach()
+                    single_val = torch.from_numpy(value).float().view(-1, 1) + self.gamma ** self.H * self.value_no_model(s, time + self.H).detach()
                 else:
                     single_val = torch.from_numpy(value).float().view(-1, 1)
             total_value += single_val
             return total_value / n_rollouts
+    
+    def model_value(self, state, time, rollouts_per_model=1, add_tvf=True):
+        # rollout all models, average
+
+        total_value = torch.zeros(state.size(0), 1).to(self.policy.device)
+        
+        for model in self.fitted_model:
+            for rollout in range(rollouts_per_model):
+                s = state
+                value = np.zeros(state.size(0))
+                for t_offset in range(self.H):
+                    a = self.policy.get_action_pytorch(s, mean_action=False).detach()
+                    value += self.gamma ** t_offset * self.reward_func(s.detach().cpu().numpy(), a.cpu().numpy()).reshape(-1)
+                    s = model.network(s, a)
+
+                single_val = torch.from_numpy(value).float().view(-1, 1).to(self.policy.device)
+
+                if add_tvf:
+                    single_val += self.gamma ** self.H * self.value_no_model(s, time + self.H).detach()
+
+                total_value += single_val
+
+        return total_value / (len(self.fitted_model) * rollouts_per_model)

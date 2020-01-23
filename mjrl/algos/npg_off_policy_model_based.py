@@ -15,11 +15,14 @@ import torch
 
 from mjrl.algos.model_accel.sampling import policy_rollout
 
+NO_VALUE = 'NO_VALUE'
+
 class NPGOffPolicyModelBased(NPG):
 
     def __init__(self, env, policy, baseline, normalized_step_size, H, num_update_paths,
-        num_policy_updates, gae_lambda=None, normalize_advantage=False, summary_writer=None):
-        super().__init__(env, policy, baseline, normalized_step_size = normalized_step_size)
+        num_policy_updates, gae_lambda=None, normalize_advantage=False, summary_writer=None,
+        mode=NO_VALUE):
+        super().__init__(env, policy, baseline, normalized_step_size=normalized_step_size)
         # assume baseline has replay_buffer, fitted_model, gamma, 
 
         self.T = env.horizon
@@ -30,7 +33,8 @@ class NPGOffPolicyModelBased(NPG):
         self.normalize_advantage = normalize_advantage
         self.summary_writer = summary_writer
 
-        self.mode = 'NO_VALUE'
+        self.mode = mode
+        print('MODE:', self.mode)
 
     def train_step(self, N,
                     env=None,
@@ -66,49 +70,88 @@ class NPGOffPolicyModelBased(NPG):
         # returns_loss = self.baseline.fit_returns(paths, epochs=20)
         # print('returns loss', returns_loss)
 
-        # stats = self.baseline.fit_on_policy(paths, 64, 500)
+        stats = self.baseline.fit_on_policy(paths, 64, 500) # TODO: tune
 
-        # print('on_policy')
-        # print('average total loss', stats['sum_total'])
-        # print('average recon loss', stats['sum_recon'])
-        # print('average reward loss', stats['sum_reward'])
-        # print('average value loss', stats['sum_value'])
+        print('on_policy')
+        print('average total loss', stats['sum_total'])
+        print('average recon loss', stats['sum_recon'])
+        print('average reward loss', stats['sum_reward'])
+        print('average value loss', stats['sum_value'])
 
-        # print('last total loss', stats['last_total'])
-        # print('last recon loss', stats['last_recon'])
-        # print('last reward loss', stats['last_reward'])
-        # print('last value loss', stats['last_value'])
-        # print()
+        print('last total loss', stats['last_total'])
+        print('last recon loss', stats['last_recon'])
+        print('last reward loss', stats['last_reward'])
+        print('last value loss', stats['last_value'])
+        print()
 
+        # if False:
+        #     all_epoch_losses = self.baseline.update_all_models(mb_size=64, epochs=10)
+
+        #     print('updade all models last losses', [losses[-1] for losses in all_epoch_losses])
+        #     print('updade all models avg losses', [np.mean(losses) for losses in all_epoch_losses])
+        # else:
+        #     all_stats = self.baseline.update()
+        #     print('average total loss', np.mean([stats['sum_total'] for stats in all_stats]))
+        #     print('average recon loss', np.mean([stats['sum_recon'] for stats in all_stats]))
+        #     print('average reward loss', np.mean([stats['sum_reward'] for stats in all_stats]))
+        #     print('average value loss', np.mean([stats['sum_value'] for stats in all_stats]))
+
+        rollout_time = 0.0
+        update_baseline_time = 0.0
+        fit_returns_time = 0.0
+        update_policy_time = 0.0
+        
         # loop over number of policy updates
         for k in range(self.num_policy_updates):
             
+            start = time.time()
             ficticious_paths = self.rollout_ficticious()
             process_samples.compute_returns(ficticious_paths, gamma)
             # self.baseline.replay_buffer.push_many_temp(ficticious_paths)
+            rollout_time += time.time() - start
 
+            start = time.time()
             # update baseline
             all_stats = self.baseline.update()
+            update_baseline_time += time.time() - start
 
-            if self.mode == 'NO_VALUE':
-                self.baseline.fit_returns(ficticious_paths)
+
+            # update policy
+            # self.update_policy()
+            start = time.time()
+            self.update_from_mb_rollout(ficticious_paths)
+            update_policy_time += time.time() - start
+            # self.baseline.replay_buffer.pop_temp()
+
+            if self.mode == NO_VALUE:
+                start = time.time()
+                ep_losses = self.baseline.fit_returns(ficticious_paths, epochs=5)
+                print('baseline value loss', ep_losses)
+                fit_returns_time += time.time() - start
 
             # all_stats = self.baseline.update_traj()
             print('average total loss', np.mean([stats['sum_total'] for stats in all_stats]))
             print('average recon loss', np.mean([stats['sum_recon'] for stats in all_stats]))
             print('average reward loss', np.mean([stats['sum_reward'] for stats in all_stats]))
             print('average value loss', np.mean([stats['sum_value'] for stats in all_stats]))
-            # update policy
-            # self.update_policy()
-            self.update_from_mb_rollout(ficticious_paths)
-            # self.baseline.replay_buffer.pop_temp()
-
 
         path_returns = [sum(p["rewards"]) for p in paths]
         mean_return = np.mean(path_returns)
         std_return = np.std(path_returns)
         min_return = np.amin(path_returns)
         max_return = np.amax(path_returns)
+
+        # print('rollout_time', rollout_time)
+        # print('update_baseline_time', update_baseline_time)
+        # print('fit_returns_time', fit_returns_time)
+        # print('update_policy_time', update_policy_time)
+        
+        # rollout_time 3.230736494064331
+        # update_baseline_time 148.9973521232605
+        # fit_returns_time 42.80794668197632
+        # update_policy_time 7.572345733642578
+
+
         return [mean_return, std_return, min_return, max_return, N]
     
     # def update_policy(self):
@@ -185,7 +228,7 @@ class NPGOffPolicyModelBased(NPG):
         print('compute_advantages', self.gae_lambda)
         # assume paths are of length H
         if self.gae_lambda == None:
-            if self.mode == 'NO_VALUE':
+            if self.mode == NO_VALUE:
                 for path in paths:
                     path["baseline"] = self.baseline.predict(path)
                     path["advantages"] = path["returns"] - path["baseline"]
@@ -194,7 +237,8 @@ class NPGOffPolicyModelBased(NPG):
                     path["baseline"] = self.baseline.predict(path)
                     terminal_value = path["baseline"][-1]
                     Hleft = np.ones(self.H) * self.H - np.arange(self.H) - 1
-                    Qs = path["returns"] - path["returns"][-1] + self.baseline.gamma**Hleft * terminal_value
+                    # Qs = path["returns"] - path["returns"][-1] + self.baseline.gamma**Hleft * terminal_value
+                    Qs = path["returns"] + self.baseline.gamma**Hleft * terminal_value
 
                     path["advantages"] = Qs - path["baseline"]
                     path["advantages"][-1] = path["returns"][-1]

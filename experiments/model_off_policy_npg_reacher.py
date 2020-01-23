@@ -17,19 +17,24 @@ from mjrl.utils.process_samples import compute_returns
 import numpy as np
 
 
-SEED = 123
+SEED = 123 + 1
 
 e = GymEnv('mjrl_reacher_7dof-v0')
 
 ts=timer.time()
 
 base_dir = "/home/ben/data/off_policy_model/reacher/"
-exp_name = "experiment_debug"
+# exp_name = "experiment_just_reconstruction"
+# exp_name = "experiment_reconstruction_reward"
+exp_name = "experiment_recon_reward_value"
+# exp_name = "experiment_debug"
 exp_dir = os.path.join(base_dir, exp_name)
 
 date = datetime.now()
 date_str = date.strftime("%y-%m-%d-%H:%M:%S")
 suffix = date_str
+
+print(date_str)
 
 try:
     os.makedirs(exp_dir)
@@ -52,31 +57,38 @@ state_dim = e.observation_dim
 action_dim = e.action_dim
 time_dim = 3
 
-H = 10
-NUM_MODELS = 3
+H = 50
+NUM_MODELS = 4
 NUM_UPDATE_PATHS = 250
 NUM_POLICY_UPDATES = 5
 VALUE_HIDDEN = 512
-DYNAMICS_HIDDEN = 512
-UPDATE_PATHS = 250
+DYNAMICS_HIDDEN = 256
+UPDATE_PATHS = 200
 NUM_TRAJ = 5
-NUM_ITER = 20
-N_INIT = 10
+NUM_ITER = 100
+N_INIT = 25
 
-VALUE_WEIGHT = 0.0
-REWARD_WEIGHT = 0.0
+VALUE_WEIGHT = 0.5
+REWARD_WEIGHT = 0.05
+
 # VALUE_WEIGHT = 1.0
 # REWARD_WEIGHT = 1.0
 
-BASELINE_BATCH_SIZE = 128
+BASELINE_BATCH_SIZE = 64
+GAE = None
 
-DEBUG=False
+DEBUG = False
+
+MODE = 'VALUE'
 
 if DEBUG:
     NUM_BELLMAN_FIT_ITERS = 10
     NUM_BELLMAN_ITERS = 2
+elif MODE =='NO_VALUE':
+    NUM_BELLMAN_FIT_ITERS = 1500 #* NUM_MODELS
+    NUM_BELLMAN_ITERS = 1
 else:
-    NUM_BELLMAN_FIT_ITERS = 200
+    NUM_BELLMAN_FIT_ITERS = 150
     NUM_BELLMAN_ITERS = 10
 
 #TODO: list
@@ -90,7 +102,7 @@ models = [DynamicsModel(state_dim=e.observation_dim, act_dim=e.action_dim, devic
 
 replay_buffer = TrajectoryReplayBuffer(device=device)
 
-policy = MLP(e.spec, hidden_sizes=(32, 32), seed=SEED, init_log_std=-0.5, device=device)
+policy = MLP(e.spec, hidden_sizes=(64, 64), seed=SEED, init_log_std=-0.5, device=device)
 
 init_paths = sample_paths(N_INIT, e, policy, eval_mode=False, base_seed=SEED + 1)
 compute_returns(init_paths, gamma)
@@ -113,7 +125,9 @@ returns_loss = baseline.fit_returns(init_paths, epochs=30)
 print('returns loss', returns_loss)
 
 agent = NPGOffPolicyModelBased(e, policy, baseline, 0.05, H, NUM_UPDATE_PATHS,
-    NUM_POLICY_UPDATES, gae_lambda=None)
+    NUM_POLICY_UPDATES, gae_lambda=GAE, mode=MODE)
+
+print(job_name)
 
 train_agent(job_name=job_name,
             agent=agent,
@@ -132,3 +146,4 @@ train_agent(job_name=job_name,
             include_iteration=True,
             summary_writer=writer)
 print("time taken = %f" % (timer.time()-ts))
+print(job_name)

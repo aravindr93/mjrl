@@ -1,8 +1,12 @@
 import numpy as np
 
-def compute_returns(paths, gamma):
-    for path in paths:
-        path["returns"] = discount_sum(path["rewards"], gamma)
+def compute_returns(paths, gamma, terminal=None):
+    if terminal is None:
+        for path in paths:
+            path["returns"] = discount_sum(path["rewards"], gamma, terminal=0.0)
+    elif type(terminal) == list:
+        for i, path in enumerate(paths):
+            path["returns"] = discount_sum(path["rewards"], gamma, terminal=terminal[i])
 
 def compute_advantages(paths, baseline, gamma, gae_lambda=None, normalize=False):
     # compute and store returns, advantages, and baseline 
@@ -26,7 +30,7 @@ def compute_advantages(paths, baseline, gamma, gae_lambda=None, normalize=False)
             else:
                 b1 = np.vstack((b, np.zeros(b.shape[1]) if path["terminated"] else b[-1]))
             td_deltas = path["rewards"] + gamma*b1[1:] - b1[:-1]
-            path["advantages"] = discount_sum(td_deltas, gamma*gae_lambda)
+            path["advantages"] = discount_sum(td_deltas, gamma*gae_lambda, terminal=0.0)
         if normalize:
             alladv = np.concatenate([path["advantages"] for path in paths])
             mean_adv = alladv.mean()

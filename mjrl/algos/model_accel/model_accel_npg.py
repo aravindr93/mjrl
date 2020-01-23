@@ -62,8 +62,12 @@ class ModelAccelNPG(NPG):
                    num_cpu='max',
                    env_kwargs=None,
                    init_states=None,
+                   real_vf=False,
                    **kwargs,
                    ):
+
+        REAL_VALUE = real_vf
+        print('use real vf', REAL_VALUE)
 
         ts = timer.time()
 
@@ -89,6 +93,15 @@ class ModelAccelNPG(NPG):
         init_states = np.array([env.reset() for _ in range(N)]) if init_states is None else init_states
         assert type(init_states) == list
         assert len(init_states) == N
+
+
+        if REAL_VALUE:
+            # rollout real data, fit baseline to that data
+            num_value_paths = 100
+            real_paths = trajectory_sampler.sample_paths(num_value_paths, env, self.policy, eval_mode=False)
+            process_samples.compute_returns(real_paths, gamma)
+            error_before, error_after = self.baseline.fit(real_paths, return_errors=True)
+            print('error_before', error_before, 'error_after', error_after)
 
         for model in self.fitted_model:
             # dont set seed explicitly -- this will make rollouts follow tne global seed
@@ -123,7 +136,12 @@ class ModelAccelNPG(NPG):
         self.seed = self.seed + N if self.seed is not None else self.seed
 
         # compute returns
-        process_samples.compute_returns(paths, gamma)
+        if REAL_VALUE:
+            terminal_values = [self.baseline.predict(path)[-1] for path in paths]
+            process_samples.compute_returns(paths, gamma, terminal=terminal_values)
+        else:
+            process_samples.compute_returns(paths, gamma)
+            
         # compute advantages
         process_samples.compute_advantages(paths, self.baseline, gamma, gae_lambda)
         # train from paths
@@ -134,14 +152,16 @@ class ModelAccelNPG(NPG):
             num_samples = np.sum([p["rewards"].shape[0] for p in paths])
             self.logger.log_kv('num_samples', num_samples)
         # fit baseline
-        if self.save_logs:
-            ts = timer.time()
-            error_before, error_after = self.baseline.fit(paths, return_errors=True)
-            self.logger.log_kv('time_VF', timer.time()-ts)
-            self.logger.log_kv('VF_error_before', error_before)
-            self.logger.log_kv('VF_error_after', error_after)
-        else:
-            self.baseline.fit(paths)
+
+        if not REAL_VALUE:
+            if self.save_logs:
+                ts = timer.time()
+                error_before, error_after = self.baseline.fit(paths, return_errors=True)
+                self.logger.log_kv('time_VF', timer.time()-ts)
+                self.logger.log_kv('VF_error_before', error_before)
+                self.logger.log_kv('VF_error_after', error_after)
+            else:
+                self.baseline.fit(paths)
 
         return eval_statistics
 

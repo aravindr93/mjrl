@@ -34,6 +34,7 @@ from mjrl.algos.model_accel.sampling import sample_paths, evaluate_policy
 parser = argparse.ArgumentParser(description='Model accelerated policy optimization.')
 parser.add_argument('--output', type=str, required=True, help='location to store results')
 parser.add_argument('--config', type=str, required=True, help='path to config file with exp params')
+parser.add_argument('--init_data_policy', type=str, required=False)
 args = parser.parse_args()
 OUT_DIR = args.output
 if not os.path.exists(OUT_DIR):
@@ -64,6 +65,9 @@ if 'policy_size' not in job_data.keys():
     job_data['policy_size'] = (32, 32)
 if 'hvp_frac' not in job_data.keys():
     job_data['hvp_frac'] = 1.0
+if 'real_vf' not in job_data.keys():
+    job_data['real_vf'] = False
+
 with open(EXP_FILE, 'w') as f:
     json.dump(job_data, f, indent=4)
 
@@ -83,7 +87,9 @@ e = GymEnv(ENV_NAME)
 e.set_seed(SEED)
 models = [DynamicsModel(state_dim=e.observation_dim, act_dim=e.action_dim, seed=SEED+i, **job_data)
           for i in range(job_data['num_models'])]
+
 policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'], init_log_std=job_data['init_log_std'], min_log_std=-2.5)
+
 baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=256, epochs=2,  learn_rate=1e-3,
                        use_gpu=(True if job_data['device'] == 'cuda' else False))
 # baseline = QuadraticBaseline(e.spec)
@@ -91,6 +97,13 @@ agent = ModelAccelNPG(fitted_model=models, env=e, policy=policy, baseline=baseli
                       # hvp_sample_frac=job_data['hvp_frac'],
                       normalized_step_size=job_data['step_size'], save_logs=True)
 paths = []
+
+if args.init_data_policy is not None:
+    init_data_policy = pickle.load(open(args.init_data_policy, 'rb'))
+else:
+    init_data_policy = policy
+
+
 
 for outer_iter in range(job_data['num_iter']):
 
@@ -100,7 +113,7 @@ for outer_iter in range(job_data['num_iter']):
 
     if outer_iter == 0:
         iter_paths = trajectory_sampler.sample_paths(job_data['n_init_paths'], agent.env,
-                                                     agent.policy, eval_mode=False, base_seed=SEED)
+                                                     init_data_policy, eval_mode=False, base_seed=SEED)
     else:
         iter_paths = sample_paths(num_traj=job_data['paths_per_iter'],
                                   env=agent.env, policy=agent.policy, eval_mode=False,
@@ -161,7 +174,7 @@ for outer_iter in range(job_data['num_iter']):
         else:
             buffer_rand_idx = np.random.choice(s.shape[0], size=job_data['update_paths'], replace=True)
             init_states = list(s[buffer_rand_idx])
-        agent.train_step(N=len(init_states), init_states=init_states, horizon=job_data['horizon'])
+        agent.train_step(N=len(init_states), init_states=init_states, horizon=job_data['horizon'], real_vf=job_data['real_vf'])
         print_data = sorted(filter(lambda v: np.asarray(v[1]).size == 1,
                                    agent.logger.get_current_log().items()))
         print(tabulate(print_data))
