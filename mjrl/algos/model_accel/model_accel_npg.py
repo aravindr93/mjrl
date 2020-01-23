@@ -44,7 +44,8 @@ class ModelAccelNPG(NPG):
         # to the specified device
         for model in self.fitted_model:
             model.to(device)
-        self.baseline.model.to(device)
+        try:    self.baseline.model.to(device)
+        except: pass
 
     def is_cuda(self):
         # Check if any of the networks are on GPU
