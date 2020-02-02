@@ -80,8 +80,6 @@ def buffer_size(paths_list):
 np.random.seed(SEED)
 torch.random.manual_seed(SEED)
 
-# TODO(Aravind): Map to hardware if device_path is specified
-
 e = GymEnv(ENV_NAME)
 e.set_seed(SEED)
 models = [DynamicsModel(state_dim=e.observation_dim, act_dim=e.action_dim, seed=SEED+i, **job_data)
@@ -134,23 +132,44 @@ for outer_iter in range(job_data['num_iter']):
                                 **job_data) for i in range(job_data['num_models'])]
 
     for i, model in enumerate(models):
+        loss_general = model.comput_loss(s[-samples_to_collect:], 
+                       a[-samples_to_collect:], sp[-samples_to_collect:])
         epoch_loss = model.fit(s, a, sp, job_data['fit_mb_size'], job_data['fit_epochs'])
         logger.log_kv('loss_before_' + str(i), epoch_loss[0])
         logger.log_kv('loss_after_' + str(i), epoch_loss[-1])
+        logger.log_kv('loss_general_' + str(i), loss_general)
 
-    # ======================
+    # =================================
+    # Refresh policy if necessary
+    # =================================
+    if 'refresh_policy' in job_data.keys():
+        # start policy optimization from scratch (note that data has already been collected with an improved policy)
+        if job_data['refresh_policy']:
+            policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'], 
+                init_log_std=job_data['init_log_std'], min_log_std=job_data['min_log_std'])
+            agent.policy = policy
+        else:
+            pass
+
+    # =================================
     # NPG updates
-    # ======================
+    # =================================
     agent.fitted_model = models
     for inner_step in range(job_data['inner_steps']):
         if job_data['start_state'] == 'init':
+            print('sampling from initial state distribution')
             init_states = [e.reset() for _ in range(job_data['update_paths'])]
         else:
-        # Healthy mix for initial states : half of them come from the MDP initial 
-        # state distribution and the remaining half comes from the replay buffer,
-        # chosen uniformly at random. Buffer already concatenated into numpy array 
-        # for model learning (s, a, sp, r)
-            num_states_1, num_states_2 = job_data['update_paths'] // 2, job_data['update_paths'] // 2
+            # Healthy mix for initial states : half of them come from the MDP initial 
+            # state distribution and the remaining half comes from the replay buffer,
+            # chosen uniformly at random. Buffer already concatenated into numpy array 
+            # for model learning (s, a, sp, r)
+            print("sampling from a mix of init and replay buffer")
+            if 'buffer_frac' in job_data.keys():
+                num_states_1 = int(job_data['update_paths']*(1-job_data['buffer_frac'])) + 1
+                num_states_2 = int(job_data['update_paths']* job_data['buffer_frac']) + 1
+            else:
+                num_states_1, num_states_2 = job_data['update_paths'] // 2, job_data['update_paths'] // 2
             buffer_rand_idx = np.random.choice(s.shape[0], size=num_states_2, replace=True)
             init_states_1 = [e.reset() for _ in range(num_states_1)]
             init_states_2 = list(s[buffer_rand_idx])
@@ -190,7 +209,7 @@ for outer_iter in range(job_data['num_iter']):
     print(tabulate(print_data))
     logger.save_log(OUT_DIR+'/')
     make_train_plots(log=logger.log, keys=['rollout_score', 'eval_score', 'rollout_metric', 'eval_metric'],
-                     save_loc=OUT_DIR+'/')
+                     sample_key = 'iter_samples', save_loc=OUT_DIR+'/')
 
 # final save
 pickle.dump(agent, open(OUT_DIR + '/agent_final.pickle', 'wb'))

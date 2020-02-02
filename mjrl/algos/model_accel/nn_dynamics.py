@@ -47,6 +47,14 @@ class DynamicsModel:
         return fit_model(self.network, s, a, s_next, self.optimizer,
                          self.loss_fn, fit_mb_size, fit_epochs, set_transforms=True)
 
+    def comput_loss(self, s, a, s_next):
+        # Intended for logging use only, not for loss computation
+        sp = self.forward(s, a)
+        s_next = torch.from_numpy(s_next).float() if type(s_next) == np.ndarray else s_next
+        s_next = s_next.to(self.device)
+        loss = self.loss_fn(sp, s_next)
+        return loss.to('cpu').data.numpy()
+
 
 class DynamicsNet(nn.Module):
     def __init__(self, state_dim, act_dim, hidden_sizes=(64,64),
