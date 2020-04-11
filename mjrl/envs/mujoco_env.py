@@ -14,23 +14,30 @@ try:
 except ImportError as e:
     raise error.DependencyNotInstalled("{}. (HINT: you need to install mujoco_py, and also perform the setup instructions here: https://github.com/openai/mujoco-py/.)".format(e))
 
+def get_sim(model_path):
+    if model_path.startswith("/"):
+        fullpath = model_path
+    else:
+        fullpath = os.path.join(os.path.dirname(__file__), "assets", model_path)
+    if not path.exists(fullpath):
+        raise IOError("File %s does not exist" % fullpath)
+    model = load_model_from_path(fullpath)
+    return MjSim(model)
+
 class MujocoEnv(gym.Env):
     """Superclass for all MuJoCo environments.
     """
 
-    def __init__(self, model_path, frame_skip):
+    def __init__(self, model_path=None, frame_skip=1, sim=None):
 
-        if model_path.startswith("/"):
-            fullpath = model_path
+        if sim is None:
+            self.sim = get_sim(model_path)
         else:
-            fullpath = os.path.join(os.path.dirname(__file__), "assets", model_path)
-        if not path.exists(fullpath):
-            raise IOError("File %s does not exist" % fullpath)
-        self.frame_skip = frame_skip
-        self.model = load_model_from_path(fullpath)
-        self.sim = MjSim(self.model)
+            self.sim = sim
         self.data = self.sim.data
+        self.model = self.sim.model
 
+        self.frame_skip = frame_skip
         self.metadata = {
             'render.modes': ['human', 'rgb_array'],
             'video.frames_per_second': int(np.round(1.0 / self.dt))
