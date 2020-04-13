@@ -39,7 +39,7 @@ def do_rollout(
         env = env(**env_kwargs)
     else:
         print("Unsupported environment format")
-        raise AttributeError
+        raise AttributeError("Unsupported environment format: {}".format(env))
 
     if base_seed is not None:
         env.set_seed(base_seed)

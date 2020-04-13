@@ -69,7 +69,11 @@ class BatchREINFORCE:
                    ):
 
         # Clean up input arguments
-        env = self.env.env_id if env is None else env
+        if env is None and hasattr(self.env, 'env_id'):
+            env = self.env.env_id if env is None else env
+        else:
+            env = self.env
+
         if sample_mode != 'trajectories' and sample_mode != 'samples':
             print("sample_mode in NPG must be either 'trajectories' or 'samples'")
             quit()

@@ -12,7 +12,6 @@ class EnvSpec(object):
         self.action_dim = act_dim
         self.horizon = horizon
 
-
 class GymEnv(object):
     def __init__(self, env_name):
         env = gym.make(env_name)
@@ -177,3 +176,12 @@ class GymEnv(object):
         full_dist = ep_returns if get_full_dist is True else None
 
         return [base_stats, percentile_stats, full_dist]
+
+
+class MetaWorldEnv(GymEnv):
+    def __init__(self, env):
+        self.env = env
+        self._horizon = env.active_env.max_path_length
+        self._action_dim = self.env.action_space.shape[0]
+        self._observation_dim = self.env.observation_space.shape[0]
+        self.spec = EnvSpec(self._observation_dim, self._action_dim, self._horizon)

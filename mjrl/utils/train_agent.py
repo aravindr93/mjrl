@@ -4,6 +4,7 @@ logging.disable(logging.CRITICAL)
 from tabulate import tabulate
 from mjrl.utils.make_train_plots import make_train_plots
 from mjrl.utils.gym_env import GymEnv
+from mjrl.utils.gym_env import MetaWorldEnv
 from mjrl.samplers.core import sample_paths
 import numpy as np
 import pickle
@@ -36,7 +37,13 @@ def train_agent(job_name, agent,
     best_perf = -1e8
     train_curve = best_perf*np.ones(niter)
     mean_pol_perf = 0.0
-    e = GymEnv(agent.env.env_id)
+    try:
+        e = GymEnv(agent.env.env_id)
+    except:
+        state = agent.env.env.active_env.sim.get_state()
+        env = copy.deepcopy(agent.env.env)
+        env.active_env.sim.set_state(state)
+        e = MetaWorldEnv(env)
 
     for i in range(niter):
         print("......................................................................................")
@@ -53,8 +60,14 @@ def train_agent(job_name, agent,
 
         if evaluation_rollouts is not None and evaluation_rollouts > 0:
             print("Performing evaluation rollouts ........")
+
+            if hasattr(e, 'env_id'):
+                eval_env = e.env_id
+            else:
+                eval_env = e
+
             eval_paths = sample_paths(num_traj=evaluation_rollouts, policy=agent.policy, num_cpu=num_cpu,
-                                      env=e.env_id, eval_mode=True, base_seed=seed)
+                                      env=eval_env, eval_mode=True, base_seed=seed)
             mean_pol_perf = np.mean([np.sum(path['rewards']) for path in eval_paths])
             if agent.save_logs:
                 agent.logger.log_kv('eval_score', mean_pol_perf)
