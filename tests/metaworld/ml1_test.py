@@ -11,25 +11,25 @@ from metaworld.benchmarks import ML1
 
 SEED = 500
 
-env = ML1.get_train_tasks('pick-place-v1')
+env = ML1.get_train_tasks('bin-picking-v1')
 e = MetaWorldEnv(env)
 
 
-policy = MLP(e.spec, hidden_sizes=(32,32), seed=SEED)
+policy = MLP(e.spec, hidden_sizes=(256,256), seed=SEED, init_log_std=0.0)
 baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=64, epochs=10, learn_rate=1e-3)
-agent = NPG(e, policy, baseline, normalized_step_size=0.05, seed=SEED, save_logs=True)
+agent = NPG(e, policy, baseline, normalized_step_size=0.01, seed=SEED, save_logs=True)
 
 ts = timer.time()
-train_agent(job_name='metaworld_test_0',
+train_agent(job_name='metaworld_bin_picking_4',
             agent=agent,
             seed=SEED,
-            niter=50,
-            gamma=0.95,
-            gae_lambda=0.97,
-            num_cpu=1,
+            niter=200,
+            gamma=0.99,
+            gae_lambda=0.99,
+            num_cpu=16,
             sample_mode='trajectories',
-            num_traj=40,      # samples = 40*25 = 1000
-            save_freq=5,
+            num_traj=500,      # samples = 40*25 = 1000
+            save_freq=50,
             evaluation_rollouts=10,
             plot_keys=['stoc_pol_mean', 'running_score'])
 print("time taken = %f" % (timer.time()-ts))
