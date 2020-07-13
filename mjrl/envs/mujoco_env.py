@@ -10,7 +10,7 @@ import time as timer
 
 try:
     import mujoco_py
-    from mujoco_py import load_model_from_path, MjSim, MjViewer
+    from mujoco_py import load_model_from_path, MjSim, MjViewer, ignore_mujoco_warnings
 except ImportError as e:
     raise error.DependencyNotInstalled("{}. (HINT: you need to install mujoco_py, and also perform the setup instructions here: https://github.com/openai/mujoco-py/.)".format(e))
 
@@ -113,17 +113,18 @@ class MujocoEnv(gym.Env):
     def do_simulation(self, ctrl, n_frames):
         for i in range(self.model.nu):
             self.sim.data.ctrl[i] = ctrl[i]
-        for _ in range(n_frames):
-            self.sim.step()
-            if self.mujoco_render_frames is True:
-                self.mj_render()
+        with ignore_mujoco_warnings():
+            for _ in range(n_frames):
+                self.sim.step()
+                if self.mujoco_render_frames is True:
+                    self.mj_render()
 
     def mj_render(self):
         try:
             self.viewer.render()
         except:
             self.mj_viewer_setup()
-            self.viewer._run_speed = 0.5
+            self.viewer._run_speed = 1.0
             #self.viewer._run_speed /= self.frame_skip
             self.viewer.render()
 
