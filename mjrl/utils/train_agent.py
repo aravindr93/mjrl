@@ -11,6 +11,54 @@ import time as timer
 import os
 import copy
 
+
+def _load_latest_policy_and_logs(agent, *, policy_dir, logs_dir):
+    """Loads the latest policy.
+    Returns the next step number to begin with.
+    """
+    assert os.path.isdir(policy_dir), str(policy_dir)
+    assert os.path.isdir(logs_dir), str(logs_dir)
+
+    log_csv_path = os.path.join(logs_dir, 'log.csv')
+    if not os.path.exists(log_csv_path):
+        return 0   # fresh start
+
+    print("Reading: {}".format(log_csv_path))
+    agent.logger.read_log(log_csv_path)
+    last_step = agent.logger.max_len - 1
+    if last_step <= 0:
+        return 0   # fresh start
+
+
+    # find latest policy/baseline
+    i = last_step
+    while i >= 0:
+        policy_path = os.path.join(policy_dir, 'policy_{}.pickle'.format(i))
+        baseline_path = os.path.join(policy_dir, 'baseline_{}.pickle'.format(i))
+
+        if not os.path.isfile(policy_path):
+            i = i -1
+            continue
+        else:
+            print("Loaded last saved iteration: {}".format(i))
+
+        with open(policy_path, 'rb') as fp:
+            agent.policy = pickle.load(fp)
+        with open(baseline_path, 'rb') as fp:
+            agent.baseline = pickle.load(fp)
+
+        # additional
+        # global_status_path = os.path.join(policy_dir, 'global_status.pickle')
+        # with open(global_status_path, 'rb') as fp:
+        #     agent.load_global_status( pickle.load(fp) )
+
+        agent.logger.shrink_to(i + 1)
+        assert agent.logger.max_len == i + 1
+        return agent.logger.max_len
+
+    # cannot find any saved policy
+    raise RuntimeError("Log file exists, but cannot find any saved policy.")
+
 def train_agent(job_name, agent,
                 seed = 0,
                 niter = 101,
@@ -38,7 +86,15 @@ def train_agent(job_name, agent,
     mean_pol_perf = 0.0
     e = GymEnv(agent.env.env_id)
 
-    for i in range(niter):
+    # Load from any existing checkpoint, policy, statistics, etc.
+    # Why no checkpointing.. :(
+    i_start = _load_latest_policy_and_logs(agent,
+                                           policy_dir='iterations',
+                                           logs_dir='logs')
+    if i_start:
+        print("Resuming from an existing job folder ...")
+
+    for i in range(i_start, niter):
         print("......................................................................................")
         print("ITERATION : %i " % i)
 
@@ -68,6 +124,7 @@ def train_agent(job_name, agent,
             pickle.dump(agent.policy, open('iterations/' + policy_file, 'wb'))
             pickle.dump(agent.baseline, open('iterations/' + baseline_file, 'wb'))
             pickle.dump(best_policy, open('iterations/best_policy.pickle', 'wb'))
+            # pickle.dump(agent.global_status, open('iterations/global_status.pickle', 'wb'))
 
         # print results to console
         if i == 0:
