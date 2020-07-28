@@ -120,6 +120,7 @@ for outer_iter in range(job_data['num_iter']):
     logger.log_kv('fit_epochs', job_data['fit_epochs'])
     logger.log_kv('rollout_score', rollout_score)
     logger.log_kv('iter_samples', num_samples)
+    logger.log_kv('num_samples', num_samples)
     try:
         rollout_metric = e.env.env.evaluate_success(iter_paths)
         logger.log_kv('rollout_metric', rollout_metric)
@@ -209,8 +210,8 @@ for outer_iter in range(job_data['num_iter']):
                                logger.get_current_log().items()))
     print(tabulate(print_data))
     logger.save_log(OUT_DIR+'/')
-    make_train_plots(log=logger.log, keys=['rollout_score', 'eval_score', 'rollout_metric', 'eval_metric'],
-                     sample_key = 'iter_samples', save_loc=OUT_DIR+'/')
+    make_train_plots(log=logger.log, keys=['rollout_score', 'eval_score', 'rollout_metric', 'eval_metric', 'samples'],
+                     save_loc=OUT_DIR+'/')
 
 # final save
 pickle.dump(agent, open(OUT_DIR + '/agent_final.pickle', 'wb'))
