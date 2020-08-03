@@ -95,6 +95,7 @@ agent = ModelAccelNPG(fitted_model=models, env=e, policy=policy, baseline=baseli
                       # hvp_sample_frac=job_data['hvp_frac'],
                       normalized_step_size=job_data['step_size'], save_logs=True)
 paths = []
+init_states_buffer = []
 
 for outer_iter in range(job_data['num_iter']):
 
@@ -107,6 +108,7 @@ for outer_iter in range(job_data['num_iter']):
                     agent.policy, eval_mode=False, base_seed=SEED + outer_iter)
     for p in iter_paths:
         paths.append(p)
+        init_states_buffer.append(p['observations'][0])
     while buffer_size(paths) > job_data['buffer_size']:
         paths[:1] = []
 
@@ -158,7 +160,8 @@ for outer_iter in range(job_data['num_iter']):
     for inner_step in range(job_data['inner_steps']):
         if job_data['start_state'] == 'init':
             print('sampling from initial state distribution')
-            init_states = [e.reset() for _ in range(job_data['update_paths'])]
+            buffer_rand_idx = np.random.choice(len(init_states_buffer), size=job_data['update_paths'], replace=True).tolist()
+            init_states = [init_states_buffer[idx] for idx in buffer_rand_idx]
         else:
             # Healthy mix for initial states : half of them come from the MDP initial 
             # state distribution and the remaining half comes from the replay buffer,
@@ -170,8 +173,9 @@ for outer_iter in range(job_data['num_iter']):
                 num_states_2 = int(job_data['update_paths']* job_data['buffer_frac']) + 1
             else:
                 num_states_1, num_states_2 = job_data['update_paths'] // 2, job_data['update_paths'] // 2
+            buffer_rand_idx = np.random.choice(len(init_states_buffer), size=num_states_1, replace=True).tolist()
+            init_states_1 = [init_states_buffer[idx] for idx in buffer_rand_idx]
             buffer_rand_idx = np.random.choice(s.shape[0], size=num_states_2, replace=True)
-            init_states_1 = [e.reset() for _ in range(num_states_1)]
             init_states_2 = list(s[buffer_rand_idx])
             init_states = init_states_1 + init_states_2
 

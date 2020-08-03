@@ -63,6 +63,8 @@ class ModelAccelNPG(NPG):
                    num_cpu='max',
                    env_kwargs=None,
                    init_states=None,
+                   truncate_lim=None,
+                   truncate_reward=0.0,
                    **kwargs,
                    ):
 
@@ -117,6 +119,30 @@ class ModelAccelNPG(NPG):
             paths = self.env.env.env.truncate_paths(paths)
         except AttributeError:
             pass
+
+        # remove paths that are too short
+        paths = [path for path in paths if path['observations'].shape[0] >= 5]
+
+        # additional truncation based on error in the ensembles
+        if truncate_lim is not None and len(self.fitted_model) > 1:
+            for path in paths:
+                pred_err = np.zeros(path['observations'].shape[0] - 1)
+                for model in self.fitted_model:
+                    s = path['observations'][:-1]
+                    a = path['actions'][:-1]
+                    s_next = path['observations'][1:]
+                    pred = model.predict(s, a)
+                    model_err = np.mean((s_next - pred)**2, axis=-1)
+                    pred_err = np.maximum(pred_err, model_err)
+                violations = np.where(pred_err > truncate_lim)[0]
+                truncated = (not len(violations) == 0)
+                T = violations[0] + 1 if truncated else obs.shape[0]
+                T = max(4, T)   # we don't want corner cases of very short truncation
+                path["observations"] = path["observations"][:T]
+                path["actions"] = path["actions"][:T]
+                path["rewards"] = path["rewards"][:T]
+                if truncated: path["rewards"][-1] += truncate_reward
+                path["terminated"] = False if T == obs.shape[0] else False
 
         if self.save_logs:
             self.logger.log_kv('time_sampling', timer.time() - ts)

@@ -6,11 +6,13 @@ from tqdm import tqdm
 
 class DynamicsModel:
     def __init__(self, state_dim, act_dim, hidden_size=(64, 64), seed=123,
-                 fit_lr=1e-3, fit_wd=0.0, device='cpu', activation='relu', **kwargs):
+                 fit_lr=1e-3, fit_wd=0.0, device='cpu', activation='relu',
+                 out_dim=None, residual=True, **kwargs):
         self.state_dim = state_dim
         self.act_dim = act_dim
         self.device = 'cuda' if device == 'gpu' or device == 'cuda' else 'cpu'
-        self.network = DynamicsNet(state_dim, act_dim, hidden_size, seed=seed)
+        self.network = DynamicsNet(state_dim, act_dim, hidden_size,
+                                    out_dim=out_dim, residual=residual, seed=seed)
         self.network = self.network.to(self.device)
         self.network.set_transformations()
         if activation == 'tanh':
@@ -43,9 +45,10 @@ class DynamicsModel:
         s_next = s_next.to('cpu').data.numpy()
         return s_next
 
-    def fit(self, s, a, s_next, fit_mb_size, fit_epochs):
+    def fit(self, s, a, s_next, fit_mb_size, fit_epochs, max_steps=1e4):
         return fit_model(self.network, s, a, s_next, self.optimizer,
-                         self.loss_fn, fit_mb_size, fit_epochs, set_transforms=True)
+                         self.loss_fn, fit_mb_size, fit_epochs, 
+                         set_transforms=True, max_steps=max_steps)
 
     def comput_loss(self, s, a, s_next):
         # Intended for logging use only, not for loss computation
@@ -64,6 +67,8 @@ class DynamicsNet(nn.Module):
                  a_sigma = None,
                  out_mean = None,
                  out_sigma = None,
+                 out_dim = None,
+                 residual = True,
                  seed=123,
                  ):
         super(DynamicsNet, self).__init__()
@@ -71,8 +76,10 @@ class DynamicsNet(nn.Module):
         torch.manual_seed(seed)
         self.state_dim = state_dim
         self.act_dim = act_dim
+        self.out_dim = state_dim if out_dim is None else out_dim
+        self.residual = residual
         self.hidden_sizes = hidden_sizes
-        self.layer_sizes = (state_dim + act_dim, ) + hidden_sizes + (state_dim, )
+        self.layer_sizes = (state_dim + act_dim, ) + hidden_sizes + (self.out_dim, )
         # hidden layers
         self.fc_layers = nn.ModuleList([nn.Linear(self.layer_sizes[i], self.layer_sizes[i+1])
                                         for i in range(len(self.layer_sizes)-1)])
@@ -91,8 +98,8 @@ class DynamicsNet(nn.Module):
             self.s_sigma    = torch.ones(self.state_dim)
             self.a_mean     = torch.zeros(self.act_dim)
             self.a_sigma    = torch.ones(self.act_dim)
-            self.out_mean   = torch.zeros(self.state_dim)
-            self.out_sigma  = torch.ones(self.state_dim)
+            self.out_mean   = torch.zeros(self.out_dim)
+            self.out_sigma  = torch.ones(self.out_dim)
         elif type(s_mean) == torch.Tensor:
             self.s_mean, self.s_sigma = s_mean, s_sigma
             self.a_mean, self.a_sigma = a_mean, a_sigma
@@ -130,9 +137,11 @@ class DynamicsNet(nn.Module):
         out = self.fc_layers[-1](out)
         # de-normalize the output with state transformations
         # out = out * (self.out_sigma + 1e-8) + self.out_mean
+        out = out * (self.out_sigma + 1e-6)
         # add back the un-normalized state
         # network is thus forced to learn the residual which is easier
-        out = s + out
+        if self.residual:
+            out = s + out
         return out
 
     def get_params(self):
@@ -152,7 +161,7 @@ class DynamicsNet(nn.Module):
 
 def fit_model(nn_model, s, a, s_next, optimizer,
               loss_func, batch_size, epochs,
-              set_transforms=True):
+              set_transforms=True, max_steps=1e10):
     """
     :param nn_model:        pytorch model of form sp_hat = f(s, a) (class)
     :param s:               state at time t
@@ -183,14 +192,18 @@ def fit_model(nn_model, s, a, s_next, optimizer,
     s_next = s_next.to(device)
 
     if set_transforms:
-        delta = s_next - s
         s_mean, s_sigma = torch.mean(s, dim=0), torch.std(s, dim=0)
         a_mean, a_sigma = torch.mean(a, dim=0), torch.std(a, dim=0)
-        out_mean, out_sigma = torch.mean(delta, dim=0), torch.std(delta, dim=0)
+        if s.shape[-1] == s_next.shape[-1]:
+            delta = s_next - s
+            out_mean, out_sigma = torch.mean(delta, dim=0), torch.std(delta, dim=0)
+        else:
+            out_mean, out_sigma = torch.zeros(s_next.shape[-1]), torch.ones(s_next.shape[-1])
         nn_model.set_transformations(s_mean, s_sigma, a_mean, a_sigma, out_mean, out_sigma)
 
     num_samples = s.shape[0]
     epoch_losses = []
+    steps_so_far = 0
     for ep in tqdm(range(epochs)):
         rand_idx = torch.LongTensor(np.random.permutation(num_samples)).to(device)
         ep_loss = 0.0
@@ -207,5 +220,9 @@ def fit_model(nn_model, s, a, s_next, optimizer,
             optimizer.step()
             ep_loss += loss.to('cpu').data.numpy()
         epoch_losses.append(ep_loss * 1.0/num_steps)
+        steps_so_far += num_steps
+        if steps_so_far >= max_steps:
+            print("Number of grad steps exceeded threshold. Terminating early..")
+            break
     # print("Loss after 1 epoch = %f | Loss after %i epochs = %f" % (epoch_losses[0], epochs, epoch_losses[-1]))
     return epoch_losses
