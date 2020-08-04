@@ -12,10 +12,11 @@
 'exp_notes'     :   'Toy experiment for initial trial.',
 'save_freq'     :   1,
 'device'        :   'cpu',
+'learn_reward'  :   True,
 
 # dynamics learning
 
-'hidden_size'   :   (64, 64),
+'hidden_size'   :   (256, 256),
 'activation'    :   'relu',
 'fit_lr'        :   1e-3,
 'fit_wd'        :   1e-5,

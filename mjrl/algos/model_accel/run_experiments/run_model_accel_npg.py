@@ -22,7 +22,7 @@ from mjrl.baselines.quadratic_baseline import QuadraticBaseline
 from mjrl.utils.gym_env import GymEnv
 from mjrl.utils.logger import DataLog
 from mjrl.utils.make_train_plots import make_train_plots
-from mjrl.algos.model_accel.nn_dynamics import DynamicsModel
+from mjrl.algos.model_accel.nn_dynamics import WorldModel
 from mjrl.algos.model_accel.model_accel_npg import ModelAccelNPG
 from mjrl.algos.model_accel.sampling import sample_paths, evaluate_policy
 
@@ -48,20 +48,15 @@ EXP_FILE = OUT_DIR + '/job_data.json'
 SEED = job_data['seed']
 
 # base cases
-if 'eval_rollouts' not in job_data.keys():
-    job_data['eval_rollouts'] = 0
-if 'save_freq' not in job_data.keys():
-    job_data['save_freq'] = 10
-if 'device' not in job_data.keys():
-    job_data['device'] = 'cpu'
-if 'hvp_frac' not in job_data.keys():
-    job_data['hvp_frac'] = 1.0
-if 'start_state' not in job_data.keys():
-    job_data['start_state'] = 'init'
-assert job_data['start_state'] in ['init', 'buffer']
-with open(EXP_FILE, 'w') as f:
-    json.dump(job_data, f, indent=4)
+if 'eval_rollouts' not in job_data.keys():  job_data['eval_rollouts'] = 0
+if 'save_freq' not in job_data.keys():      job_data['save_freq'] = 10
+if 'device' not in job_data.keys():         job_data['device'] = 'cpu'
+if 'hvp_frac' not in job_data.keys():       job_data['hvp_frac'] = 1.0
+if 'start_state' not in job_data.keys():    job_data['start_state'] = 'init'
+if 'learn_reward' not in job_data.keys():   job_data['learn_reward'] = True
 
+assert job_data['start_state'] in ['init', 'buffer']
+with open(EXP_FILE, 'w') as f:  json.dump(job_data, f, indent=4)
 del(job_data['seed'])
 job_data['base_seed'] = SEED
 
@@ -82,16 +77,16 @@ torch.random.manual_seed(SEED)
 
 e = GymEnv(ENV_NAME)
 e.set_seed(SEED)
-models = [DynamicsModel(state_dim=e.observation_dim, act_dim=e.action_dim, seed=SEED+i, **job_data)
-          for i in range(job_data['num_models'])]
+
+models = [WorldModel(state_dim=e.observation_dim, act_dim=e.action_dim, seed=SEED+i, 
+                     **job_data) for i in range(job_data['num_models'])]
 policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'], 
                 init_log_std=job_data['init_log_std'], min_log_std=job_data['min_log_std'])
 if 'init_policy' in job_data.keys():
     if job_data['init_policy'] != None: policy = pickle.load(open(job_data['init_policy'], 'rb'))
 baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=256, epochs=2,  learn_rate=1e-3,
-                       use_gpu=(True if job_data['device'] == 'cuda' else False))
-# baseline = QuadraticBaseline(e.spec)
-agent = ModelAccelNPG(fitted_model=models, env=e, policy=policy, baseline=baseline, seed=SEED,
+                       use_gpu=(True if job_data['device'] == 'cuda' else False))               
+agent = ModelAccelNPG(learned_model=models, env=e, policy=policy, baseline=baseline, seed=SEED,
                       # hvp_sample_frac=job_data['hvp_frac'],
                       normalized_step_size=job_data['step_size'], save_logs=True)
 paths = []
@@ -115,8 +110,8 @@ for outer_iter in range(job_data['num_iter']):
     s = np.concatenate([p['observations'][:-1] for p in paths])
     a = np.concatenate([p['actions'][:-1] for p in paths])
     sp = np.concatenate([p['observations'][1:] for p in paths])
-    r = np.array([np.sum(p['rewards']) for p in iter_paths])
-    rollout_score = np.mean(r)
+    r = np.concatenate([p['rewards'][:-1] for p in paths])
+    rollout_score = np.mean([np.sum(p['rewards']) for p in iter_paths])
     num_samples = np.sum([p['rewards'].shape[0] for p in iter_paths])
 
     logger.log_kv('fit_epochs', job_data['fit_epochs'])
@@ -130,16 +125,19 @@ for outer_iter in range(job_data['num_iter']):
 
     print("Data gathered, fitting model ...")
     if job_data['refresh_fit']:
-        models = [DynamicsModel(state_dim=e.observation_dim, act_dim=e.action_dim, seed=SEED+123*outer_iter,
-                                **job_data) for i in range(job_data['num_models'])]
+        models = [WorldModel(state_dim=e.observation_dim, act_dim=e.action_dim, seed=SEED+123*outer_iter,
+                             **job_data) for i in range(job_data['num_models'])]
 
     for i, model in enumerate(models):
-        loss_general = model.comput_loss(s[-samples_to_collect:], 
-                       a[-samples_to_collect:], sp[-samples_to_collect:])
-        epoch_loss = model.fit(s, a, sp, job_data['fit_mb_size'], job_data['fit_epochs'])
-        logger.log_kv('loss_before_' + str(i), epoch_loss[0])
-        logger.log_kv('loss_after_' + str(i), epoch_loss[-1])
-        logger.log_kv('loss_general_' + str(i), loss_general)
+        loss_general = model.compute_loss(s[-samples_to_collect:], 
+                       a[-samples_to_collect:], sp[-samples_to_collect:]) # generalization error
+        dynamics_loss = model.fit_dynamics(s, a, sp, **job_data)
+        reward_loss = model.fit_reward(s, a, r.reshape(-1, 1), **job_data)
+        # logger.log_kv('dyn_loss_be_' + str(i), dynamics_loss[0])
+        logger.log_kv('dyn_loss_' + str(i), dynamics_loss[-1])
+        logger.log_kv('dyn_loss_gen_' + str(i), loss_general)
+        # logger.log_kv('rew_loss_be_' + str(i), reward_loss[0])
+        logger.log_kv('rew_loss_' + str(i), reward_loss[-1])
 
     # =================================
     # Refresh policy if necessary
@@ -156,18 +154,15 @@ for outer_iter in range(job_data['num_iter']):
     # =================================
     # NPG updates
     # =================================
-    agent.fitted_model = models
+    agent.learned_model = models
     for inner_step in range(job_data['inner_steps']):
         if job_data['start_state'] == 'init':
             print('sampling from initial state distribution')
             buffer_rand_idx = np.random.choice(len(init_states_buffer), size=job_data['update_paths'], replace=True).tolist()
             init_states = [init_states_buffer[idx] for idx in buffer_rand_idx]
         else:
-            # Healthy mix for initial states : half of them come from the MDP initial 
-            # state distribution and the remaining half comes from the replay buffer,
-            # chosen uniformly at random. Buffer already concatenated into numpy array 
-            # for model learning (s, a, sp, r)
-            print("sampling from a mix of init and replay buffer")
+            # Mix data between initial states and randomly sampled data from buffer
+            print("sampling from mix of initial states and data buffer")
             if 'buffer_frac' in job_data.keys():
                 num_states_1 = int(job_data['update_paths']*(1-job_data['buffer_frac'])) + 1
                 num_states_2 = int(job_data['update_paths']* job_data['buffer_frac']) + 1
@@ -186,7 +181,7 @@ for outer_iter in range(job_data['num_iter']):
 
     if job_data['eval_rollouts'] > 0:
         print("Performing validation rollouts ... ")
-        eval_paths = evaluate_policy(agent.env, agent.policy, agent.fitted_model[0], noise_level=0.0,
+        eval_paths = evaluate_policy(agent.env, agent.policy, agent.learned_model[0], noise_level=0.0,
                                      real_step=True, num_episodes=job_data['eval_rollouts'], visualize=False)
         eval_score = np.mean([np.sum(p['rewards']) for p in eval_paths])
         logger.log_kv('eval_score', eval_score)

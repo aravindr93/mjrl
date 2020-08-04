@@ -10,20 +10,23 @@ logging.disable(logging.CRITICAL)
 
 
 # ===========================================================
-# Rollout parameteric policy on fitted env to collect data
+# Rollout parameteric policy on learned env to collect data
 # ===========================================================
 
 def policy_rollout(
         num_traj,
         env,
         policy,
-        fitted_model,
+        learned_model,
         init_state=None,
         eval_mode=False,
         horizon=1e6,
         env_kwargs=None,
         seed=None,
-):
+        ):
+    
+    # Only CPU rollouts are currently supported.
+    # TODO(Aravind) : Extend GPU support
 
     # get the correct env behavior
     if type(env) == str:
@@ -48,6 +51,9 @@ def policy_rollout(
         st = torch.from_numpy(init_state).float()
     elif type(init_state) == list:
         st = torch.from_numpy(np.array(init_state)).float()
+    elif type(init_state) == torch.Tensor:
+        assert init_state.device == 'cpu'
+        pass
     else:
         print("Unsupported format for init state")
         quit()
@@ -60,7 +66,7 @@ def policy_rollout(
         at = policy.model.forward(st)
         if eval_mode is not True:
             at = at + torch.randn(at.shape) * torch.exp(policy.log_std)
-        stp1 = fitted_model.forward(st, at)
+        stp1 = learned_model.forward(st, at)
         obs.append(st.to('cpu').data.numpy())
         act.append(at.to('cpu').data.numpy())
         st = stp1
@@ -76,13 +82,16 @@ def policy_rollout(
 
 
 # ===========================================================
-# Rollout action sequences on the fitted model
+# Rollout action sequences on the learned model
 # ===========================================================
 
-def trajectory_rollout(actions, fitted_model, init_states):
+def trajectory_rollout(actions, learned_model, init_states):
     # init_states: (num_traj, state_dim) : numpy array
     # actions : (num_traj, horizon, action_dim) : numpy array
-    # fitted_model : model(s, a) = s_tp1
+    # learned_model : model(s, a) = s_tp1
+
+    # Only CPU rollouts are currently supported.
+    # TODO(Aravind) : Extend GPU support
 
     actions = np.array(actions) if type(actions) == list else actions
     num_traj = actions.shape[0]
@@ -96,7 +105,7 @@ def trajectory_rollout(actions, fitted_model, init_states):
     for t in range(horizon):
         at = actions[:, t, :]
         at = torch.from_numpy(at).float()
-        stp1 = fitted_model.forward(st, at)
+        stp1 = learned_model.forward(st, at)
         obs.append(st.data.numpy().copy())
         st = stp1
 
@@ -198,7 +207,7 @@ def generate_perturbed_actions(base_act, filter_coefs):
     return eps
 
 
-def generate_paths(num_traj, fitted_model, start_state, base_act, filter_coefs, base_seed=None):
+def generate_paths(num_traj, learned_model, start_state, base_act, filter_coefs, base_seed=None):
     """
     first generate enough perturbed actions
     then do rollouts with generated actions
@@ -211,11 +220,11 @@ def generate_paths(num_traj, fitted_model, start_state, base_act, filter_coefs, 
         act = generate_perturbed_actions(base_act, filter_coefs)
         act_list.append(act)
     act = np.array(act_list)
-    paths = trajectory_rollout(act, fitted_model, start_state)
+    paths = trajectory_rollout(act, learned_model, start_state)
     return paths
 
 
-def evaluate_policy(e, policy, fitted_model, noise_level=0.0,
+def evaluate_policy(e, policy, learned_model, noise_level=0.0,
                     real_step=False, num_episodes=10, visualize=False):
     # rollout the policy on env and record performance
     paths = []
@@ -236,7 +245,7 @@ def evaluate_policy(e, policy, fitted_model, noise_level=0.0,
             if noise_level > 0.0:
                 a = a + e.env.env.np_random.uniform(low=-noise_level, high=noise_level, size=a.shape[0])
             if real_step is False:
-                next_s = fitted_model.predict(o, a)
+                next_s = learned_model.predict(o, a)
                 r = 0.0 # temporarily
                 e.env.env.set_fitted_state(next_s)
             else:
