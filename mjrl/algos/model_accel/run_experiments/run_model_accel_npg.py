@@ -2,6 +2,9 @@
 Job script to optimize policy with fitted model
 """
 
+from os import environ
+environ['CUDA_DEVICE_ORDER']='PCI_BUS_ID'
+environ['MKL_THREADING_LAYER']='GNU'
 import numpy as np
 import copy
 import torch
@@ -132,12 +135,11 @@ for outer_iter in range(job_data['num_iter']):
         loss_general = model.compute_loss(s[-samples_to_collect:], 
                        a[-samples_to_collect:], sp[-samples_to_collect:]) # generalization error
         dynamics_loss = model.fit_dynamics(s, a, sp, **job_data)
-        reward_loss = model.fit_reward(s, a, r.reshape(-1, 1), **job_data)
-        # logger.log_kv('dyn_loss_be_' + str(i), dynamics_loss[0])
         logger.log_kv('dyn_loss_' + str(i), dynamics_loss[-1])
         logger.log_kv('dyn_loss_gen_' + str(i), loss_general)
-        # logger.log_kv('rew_loss_be_' + str(i), reward_loss[0])
-        logger.log_kv('rew_loss_' + str(i), reward_loss[-1])
+        if job_data['learn_reward']:
+            reward_loss = model.fit_reward(s, a, r.reshape(-1, 1), **job_data)
+            logger.log_kv('rew_loss_' + str(i), reward_loss[-1])
 
     # =================================
     # Refresh policy if necessary

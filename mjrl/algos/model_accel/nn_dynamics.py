@@ -93,7 +93,7 @@ class WorldModel:
             s = torch.from_numpy(s).float()
             a = torch.from_numpy(a).float()
             sp = torch.from_numpy(sp).float()
-        s.to(self.device); a.to(self.device); sp.to(self.device)
+        s = s.to(self.device); a = a.to(self.device); sp = sp.to(self.device)
        
         # set network transformations
         if set_transformations:
@@ -101,7 +101,6 @@ class WorldModel:
             a_mean, a_sigma = torch.mean(a, dim=0), torch.std(a, dim=0)
             out_mean, out_sigma = torch.mean(sp-s, dim=0), torch.std(sp-s, dim=0)
             self.dynamics_net.set_transformations(s_mean, s_sigma, a_mean, a_sigma, out_mean, out_sigma)
-            # if self.learn_reward: self.reward_net.set_transformations(s_mean, s_sigma, a_mean, a_sigma)
 
         # call the generic fit function
         X = (s, a) ; Y = sp
@@ -122,7 +121,7 @@ class WorldModel:
             s = torch.from_numpy(s).float()
             a = torch.from_numpy(a).float()
             r = torch.from_numpy(r).float()
-        s.to(self.device); a.to(self.device); r.to(self.device)
+        s = s.to(self.device); a = a.to(self.device); r = r.to(self.device)
        
         # set network transformations
         if set_transformations:
@@ -156,7 +155,7 @@ class WorldModel:
 
 
 class DynamicsNet(nn.Module):
-    def __init__(self, state_dim, act_dim, hidden_sizes=(64,64),
+    def __init__(self, state_dim, act_dim, hidden_size=(64,64),
                  s_mean = None,
                  s_sigma = None,
                  a_mean = None,
@@ -166,20 +165,19 @@ class DynamicsNet(nn.Module):
                  out_dim = None,
                  residual = True,
                  seed=123,
+                 use_mask = True,
                  ):
         super(DynamicsNet, self).__init__()
 
         torch.manual_seed(seed)
-        self.state_dim = state_dim
-        self.act_dim = act_dim
+        self.state_dim, self.act_dim, self.hidden_size = state_dim, act_dim, hidden_size
         self.out_dim = state_dim if out_dim is None else out_dim
-        self.residual = residual
-        self.hidden_sizes = hidden_sizes
-        self.layer_sizes = (state_dim + act_dim, ) + hidden_sizes + (self.out_dim, )
+        self.layer_sizes = (state_dim + act_dim, ) + hidden_size + (self.out_dim, )
         # hidden layers
         self.fc_layers = nn.ModuleList([nn.Linear(self.layer_sizes[i], self.layer_sizes[i+1])
                                         for i in range(len(self.layer_sizes)-1)])
         self.nonlinearity = torch.relu
+        self.residual, self.use_mask = residual, use_mask
         self.set_transformations(s_mean, s_sigma, a_mean, a_sigma, out_mean, out_sigma)
 
     def set_transformations(self, s_mean=None, s_sigma=None,
@@ -208,10 +206,12 @@ class DynamicsNet(nn.Module):
             print("Unknown type for transformations")
             quit()
 
-        device = 'cuda' if next(self.parameters()).is_cuda else 'cpu'
+        device = next(self.parameters()).data.device
         self.s_mean, self.s_sigma = self.s_mean.to(device), self.s_sigma.to(device)
         self.a_mean, self.a_sigma = self.a_mean.to(device), self.a_sigma.to(device)
         self.out_mean, self.out_sigma = self.out_mean.to(device), self.out_sigma.to(device)
+        # if some state dimensions have very small variations, we will force it to zero
+        self.mask = self.out_sigma >= 1e-4
 
         self.transformations = dict(s_mean=self.s_mean, s_sigma=self.s_sigma,
                                     a_mean=self.a_mean, a_sigma=self.a_sigma,
@@ -228,9 +228,9 @@ class DynamicsNet(nn.Module):
             out = self.fc_layers[i](out)
             out = self.nonlinearity(out)
         out = self.fc_layers[-1](out)
-        # out = out * (self.out_sigma + 1e-8) + self.out_mean
-        if self.residual:
-            out = s + out
+        out = out * self.mask
+        out = out * self.mask if self.use_mask else out * self.out_sigma + self.out_mean
+        out = out + s if self.residual else out
         return out
 
     def get_params(self):
@@ -286,7 +286,7 @@ class RewardNet(nn.Module):
             print("Unknown type for transformations")
             quit()
 
-        device = 'cuda' if next(self.parameters()).is_cuda else 'cpu'
+        device = next(self.parameters()).data.device
         self.s_mean, self.s_sigma   = self.s_mean.to(device), self.s_sigma.to(device)
         self.a_mean, self.a_sigma   = self.a_mean.to(device), self.a_sigma.to(device)
         self.sp_mean, self.sp_sigma = self.sp_mean.to(device), self.sp_sigma.to(device)

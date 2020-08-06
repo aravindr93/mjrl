@@ -23,6 +23,11 @@ def policy_rollout(
         horizon=1e6,
         env_kwargs=None,
         seed=None,
+        s_min=None,
+        s_max=None,
+        a_min=None,
+        a_max=None,
+        large_value=float(1e2),
         ):
     
     # Only CPU rollouts are currently supported.
@@ -66,7 +71,10 @@ def policy_rollout(
         at = policy.model.forward(st)
         if eval_mode is not True:
             at = at + torch.randn(at.shape) * torch.exp(policy.log_std)
+        # clamp states and actions to avoid blowup
+        at = enforce_tensor_bounds(at, a_min, a_max, large_value)
         stp1 = learned_model.forward(st, at)
+        stp1 = enforce_tensor_bounds(stp1, s_min, s_max, large_value)
         obs.append(st.to('cpu').data.numpy())
         act.append(at.to('cpu').data.numpy())
         st = stp1
@@ -273,3 +281,35 @@ def evaluate_policy(e, policy, learned_model, noise_level=0.0,
         if visualize:
             print("episode score = %f " % np.sum(path['rewards']))
     return paths
+
+
+def enforce_tensor_bounds(torch_tensor, min_val=None, max_val=None, 
+                          large_value=float(1e4), device=None):
+    """
+        Clamp the torch_tensor to Box[min_val, max_val]
+        torch_tensor should have shape (A, B)
+        min_val and max_val can either be scalars or tensors of shape (B,)
+        If min_val and max_val are not given, they are treated as large_value
+    """
+    # compute bounds
+    if min_val is None: min_val = - large_value
+    if max_val is None: max_val = large_value
+    if device is None:  device = torch_tensor.data.device
+
+    assert type(min_val) == float or type(min_val) == torch.Tensor
+    assert type(max_val) == float or type(max_val) == torch.Tensor
+    
+    if type(min_val) == torch.Tensor:
+        if len(min_val.shape) > 0: assert min_val.shape[-1] == torch_tensor.shape[-1]
+    else:
+        min_val = torch.tensor(min_val)
+    
+    if type(max_val) == torch.Tensor:
+        if len(max_val.shape) > 0: assert max_val.shape[-1] == torch_tensor.shape[-1]
+    else:
+        max_val = torch.tensor(max_val)
+    
+    min_val = min_val.to(device)
+    max_val = max_val.to(device)
+
+    return torch.max(torch.min(torch_tensor, max_val), min_val)
