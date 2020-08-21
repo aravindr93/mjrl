@@ -29,7 +29,7 @@ class WorldModel:
         # construct the reward model if necessary
         if self.learn_reward:
             # small network for reward is sufficient if we augment the inputs with next state predictions
-            self.reward_net = RewardNet(state_dim, act_dim, hidden_size=(64, 64), seed=seed).to(self.device)
+            self.reward_net = RewardNet(state_dim, act_dim, hidden_size=(100, 100), seed=seed).to(self.device)
             self.reward_net.set_transformations()  # in case device is different from default, it will set transforms correctly
             if activation == 'tanh' : self.reward_net.nonlinearity = torch.tanh
             self.reward_opt = torch.optim.Adam(self.reward_net.parameters(), lr=fit_lr, weight_decay=fit_wd)
@@ -127,7 +127,8 @@ class WorldModel:
         if set_transformations:
             s_mean, s_sigma = torch.mean(s, dim=0), torch.std(s, dim=0)
             a_mean, a_sigma = torch.mean(a, dim=0), torch.std(a, dim=0)
-            self.reward_net.set_transformations(s_mean, s_sigma, a_mean, a_sigma)
+            r_mean, r_sigma = torch.mean(r, dim=0), torch.std(r, dim=0)
+            self.reward_net.set_transformations(s_mean, s_sigma, a_mean, a_sigma, r_mean, r_sigma)
 
         # get next state prediction
         sp = self.dynamics_net.forward(s, a).detach().clone()
@@ -211,7 +212,7 @@ class DynamicsNet(nn.Module):
         self.a_mean, self.a_sigma = self.a_mean.to(device), self.a_sigma.to(device)
         self.out_mean, self.out_sigma = self.out_mean.to(device), self.out_sigma.to(device)
         # if some state dimensions have very small variations, we will force it to zero
-        self.mask = self.out_sigma >= 1e-4
+        self.mask = self.out_sigma >= 1e-6
 
         self.transformations = dict(s_mean=self.s_mean, s_sigma=self.s_sigma,
                                     a_mean=self.a_mean, a_sigma=self.a_sigma,
@@ -228,8 +229,8 @@ class DynamicsNet(nn.Module):
             out = self.fc_layers[i](out)
             out = self.nonlinearity(out)
         out = self.fc_layers[-1](out)
-        out = out * self.mask
-        out = out * self.mask if self.use_mask else out * self.out_sigma + self.out_mean
+        out = out * self.out_sigma + self.out_mean
+        out = out * self.mask if self.use_mask else out
         out = out + s if self.residual else out
         return out
 
@@ -268,20 +269,24 @@ class RewardNet(nn.Module):
         self.set_transformations(s_mean, s_sigma, a_mean, a_sigma)
 
     def set_transformations(self, s_mean=None, s_sigma=None,
-                            a_mean=None, a_sigma=None):
+                            a_mean=None, a_sigma=None,
+                            out_mean=None, out_sigma=None):
 
         if s_mean is None:
-            self.s_mean, self.s_sigma   = torch.zeros(self.state_dim), torch.ones(self.state_dim)
-            self.a_mean, self.a_sigma   = torch.zeros(self.act_dim), torch.ones(self.act_dim)
-            self.sp_mean, self.sp_sigma = torch.zeros(self.state_dim), torch.ones(self.state_dim)
+            self.s_mean, self.s_sigma       = torch.zeros(self.state_dim), torch.ones(self.state_dim)
+            self.a_mean, self.a_sigma       = torch.zeros(self.act_dim), torch.ones(self.act_dim)
+            self.sp_mean, self.sp_sigma     = torch.zeros(self.state_dim), torch.ones(self.state_dim)
+            self.out_mean, self.out_sigma   = 0.0, 1.0 
         elif type(s_mean) == torch.Tensor:
-            self.s_mean, self.s_sigma   = s_mean, s_sigma
-            self.a_mean, self.a_sigma   = a_mean, a_sigma
-            self.sp_mean, self.sp_sigma = s_mean, s_sigma
+            self.s_mean, self.s_sigma       = s_mean, s_sigma
+            self.a_mean, self.a_sigma       = a_mean, a_sigma
+            self.sp_mean, self.sp_sigma     = s_mean, s_sigma
+            self.out_mean, self.out_sigma   = out_mean, out_sigma
         elif type(s_mean) == np.ndarray:
-            self.s_mean, self.s_sigma   = torch.from_numpy(s_mean).float(), torch.from_numpy(s_sigma).float()
-            self.a_mean, self.a_sigma   = torch.from_numpy(a_mean).float(), torch.from_numpy(a_sigma).float()
-            self.sp_mean, self.sp_sigma = torch.from_numpy(s_mean).float(), torch.from_numpy(s_sigma).float()
+            self.s_mean, self.s_sigma       = torch.from_numpy(s_mean).float(), torch.from_numpy(s_sigma).float()
+            self.a_mean, self.a_sigma       = torch.from_numpy(a_mean).float(), torch.from_numpy(a_sigma).float()
+            self.sp_mean, self.sp_sigma     = torch.from_numpy(s_mean).float(), torch.from_numpy(s_sigma).float()
+            self.out_mean, self.out_sigma   = out_mean, out_sigma
         else:
             print("Unknown type for transformations")
             quit()
@@ -292,7 +297,8 @@ class RewardNet(nn.Module):
         self.sp_mean, self.sp_sigma = self.sp_mean.to(device), self.sp_sigma.to(device)
 
         self.transformations = dict(s_mean=self.s_mean, s_sigma=self.s_sigma,
-                                    a_mean=self.a_mean, a_sigma=self.a_sigma)
+                                    a_mean=self.a_mean, a_sigma=self.a_sigma,
+                                    out_mean=self.out_mean, out_sigma=self.out_sigma)
 
     def forward(self, s, a, sp):
         # The reward will be parameterized as r = f_theta(s, a, s').
@@ -308,6 +314,7 @@ class RewardNet(nn.Module):
             out = self.fc_layers[i](out)
             out = self.nonlinearity(out)
         out = self.fc_layers[-1](out)
+        out = out * (self.out_sigma + 1e-6) + self.out_mean
         return out
 
     def get_params(self):

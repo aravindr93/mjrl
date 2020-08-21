@@ -14,15 +14,31 @@ class EnvSpec(object):
 
 
 class GymEnv(object):
-    def __init__(self, env_name):
-        env = gym.make(env_name)
+    def __init__(self, env, env_kwargs=None, 
+                 act_repeat=1, *args, **kwargs):
+    
+        # get the correct env behavior
+        if type(env) == str:
+            env = gym.make(env)
+        elif isinstance(env, gym.Env):
+            env = env
+        elif callable(env):
+            env = env(**env_kwargs)
+        else:
+            print("Unsupported environment format")
+            raise AttributeError
+
         self.env = env
         self.env_id = env.spec.id
+        self.act_repeat = act_repeat
 
         try:
             self._horizon = env.spec.max_episode_steps
         except AttributeError:
             self._horizon = env.spec._horizon
+
+        assert self._horizon % act_repeat == 0
+        self._horizon = self._horizon // self.act_repeat
 
         try:
             self._action_dim = self.env.env.action_dim
@@ -71,7 +87,15 @@ class GymEnv(object):
         return self.reset(seed)
 
     def step(self, action):
-        return self.env.step(action)
+        if self.act_repeat == 1: 
+            return self.env.step(action)
+        else:
+            cum_reward = 0.0
+            for i in range(self.act_repeat):
+                obs, reward, done, ifo = self.env.step(action)
+                cum_reward += reward
+                if done: return obs, cum_reward, done, ifo
+            return obs, cum_reward, done, ifo
 
     def render(self):
         try:
