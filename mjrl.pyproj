@@ -1,0 +1,108 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{2a362194-560d-4205-8d98-cb3dd94d3f3e}</ProjectGuid>
+    <ProjectHome />
+    <StartupFile>mjrl\algos\model_accel\run_experiments\run_model_accel_npg.py</StartupFile>
+    <SearchPath />
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <ProjectTypeGuids>{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
+    <LaunchProvider>Standard Python launcher</LaunchProvider>
+    <InterpreterId>Global|PythonCore|3.5</InterpreterId>
+    <CommandLineArguments>--config mjrl/algos/model_accel/run_experiments/configs/point_mass.txt --output output</CommandLineArguments>
+    <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
+    <IsWindowsApplication>False</IsWindowsApplication>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'" />
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'" />
+  <PropertyGroup>
+    <VisualStudioVersion Condition=" '$(VisualStudioVersion)' == '' ">10.0</VisualStudioVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="examples\behavior_clone.py" />
+    <Compile Include="examples\linear_nn_comparison.py" />
+    <Compile Include="examples\policy_opt_job_script.py" />
+    <Compile Include="mjrl\algos\batch_reinforce.py" />
+    <Compile Include="mjrl\algos\behavior_cloning.py" />
+    <Compile Include="mjrl\algos\dapg.py" />
+    <Compile Include="mjrl\algos\mbac.py" />
+    <Compile Include="mjrl\algos\model_accel\model_accel_npg.py" />
+    <Compile Include="mjrl\algos\model_accel\model_learning_mpc.py" />
+    <Compile Include="mjrl\algos\model_accel\nn_dynamics.py" />
+    <Compile Include="mjrl\algos\model_accel\run_experiments\run_model_accel_npg.py" />
+    <Compile Include="mjrl\algos\model_accel\run_experiments\sandbox\run_model_learning_mpc.py" />
+    <Compile Include="mjrl\algos\model_accel\run_experiments\utils\visualize_policy.py" />
+    <Compile Include="mjrl\algos\model_accel\run_experiments\utils\visualize_trajectories.py" />
+    <Compile Include="mjrl\algos\model_accel\sampling.py" />
+    <Compile Include="mjrl\algos\model_accel\__init__.py" />
+    <Compile Include="mjrl\algos\npg_cg.py" />
+    <Compile Include="mjrl\algos\ppo_clip.py" />
+    <Compile Include="mjrl\algos\trpo.py" />
+    <Compile Include="mjrl\algos\__init__.py" />
+    <Compile Include="mjrl\baselines\linear_baseline.py" />
+    <Compile Include="mjrl\baselines\mlp_baseline.py" />
+    <Compile Include="mjrl\baselines\quadratic_baseline.py" />
+    <Compile Include="mjrl\baselines\zero_baseline.py" />
+    <Compile Include="mjrl\baselines\__init__.py" />
+    <Compile Include="mjrl\envs\mujoco_env.py" />
+    <Compile Include="mjrl\envs\peg_insertion_sawyer.py" />
+    <Compile Include="mjrl\envs\point_mass.py" />
+    <Compile Include="mjrl\envs\reacher_sawyer.py" />
+    <Compile Include="mjrl\envs\swimmer.py" />
+    <Compile Include="mjrl\envs\__init__.py" />
+    <Compile Include="mjrl\policies\gaussian_linear.py" />
+    <Compile Include="mjrl\policies\gaussian_mlp.py" />
+    <Compile Include="mjrl\policies\mpc_actor.py" />
+    <Compile Include="mjrl\policies\__init__.py" />
+    <Compile Include="mjrl\samplers\core.py" />
+    <Compile Include="mjrl\samplers\__init__.py" />
+    <Compile Include="mjrl\utils\cg_solve.py" />
+    <Compile Include="mjrl\utils\fc_network.py" />
+    <Compile Include="mjrl\utils\get_environment.py" />
+    <Compile Include="mjrl\utils\gym_env.py" />
+    <Compile Include="mjrl\utils\logger.py" />
+    <Compile Include="mjrl\utils\make_train_plots.py" />
+    <Compile Include="mjrl\utils\optimize_model.py" />
+    <Compile Include="mjrl\utils\process_samples.py" />
+    <Compile Include="mjrl\utils\tensor_utils.py" />
+    <Compile Include="mjrl\utils\train_agent.py" />
+    <Compile Include="mjrl\utils\visualize_policy.py" />
+    <Compile Include="mjrl\utils\__init__.py" />
+    <Compile Include="mjrl\__init__.py" />
+    <Compile Include="setup.py" />
+    <Compile Include="tests\point_mass_test.py" />
+    <Compile Include="tests\visualizer_test.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="examples\example_configs\hopper_npg.txt" />
+    <Content Include="examples\example_configs\swimmer_npg.txt" />
+    <Content Include="examples\example_configs\swimmer_ppo.txt" />
+    <Content Include="mjrl\algos\model_accel\run_experiments\configs\point_mass.txt" />
+    <Content Include="mjrl\algos\model_accel\run_experiments\configs\reacher.txt" />
+    <Content Include="mjrl\algos\model_accel\run_experiments\sandbox\example_config_mpc.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="examples" />
+    <Folder Include="examples\example_configs" />
+    <Folder Include="mjrl" />
+    <Folder Include="mjrl\algos" />
+    <Folder Include="mjrl\algos\model_accel" />
+    <Folder Include="mjrl\algos\model_accel\run_experiments" />
+    <Folder Include="mjrl\algos\model_accel\run_experiments\configs" />
+    <Folder Include="mjrl\algos\model_accel\run_experiments\sandbox" />
+    <Folder Include="mjrl\algos\model_accel\run_experiments\utils" />
+    <Folder Include="mjrl\baselines" />
+    <Folder Include="mjrl\envs" />
+    <Folder Include="mjrl\policies" />
+    <Folder Include="mjrl\samplers" />
+    <Folder Include="mjrl\utils" />
+    <Folder Include="tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <InterpreterReference Include="Global|PythonCore|3.5" />
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+</Project>

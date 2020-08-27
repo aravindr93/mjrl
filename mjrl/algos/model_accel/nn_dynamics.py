@@ -15,7 +15,7 @@ class WorldModel:
                  activation='relu',
                  residual=True,
                  *args,
-                 **kwargs,):
+                 **kwargs):
 
         self.state_dim, self.act_dim = state_dim, act_dim
         self.device, self.learn_reward = device, learn_reward
@@ -230,7 +230,7 @@ class DynamicsNet(nn.Module):
             out = self.nonlinearity(out)
         out = self.fc_layers[-1](out)
         out = out * self.out_sigma + self.out_mean
-        out = out * self.mask if self.use_mask else out
+        out = out * self.mask.float() if self.use_mask else out
         out = out + s if self.residual else out
         return out
 

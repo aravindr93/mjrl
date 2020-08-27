@@ -63,7 +63,7 @@ class ModelAccelNPG(NPG):
                    init_states=None,
                    truncate_lim=None,
                    truncate_reward=0.0,
-                   **kwargs,
+                   **kwargs
                    ):
 
         ts = timer.time()
