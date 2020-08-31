@@ -29,20 +29,22 @@ from mjrl.algos.model_accel.nn_dynamics import WorldModel
 from mjrl.algos.model_accel.model_accel_npg import ModelAccelNPG
 from mjrl.algos.model_accel.sampling import sample_paths, evaluate_policy
 
-
 # ===============================================================================
 # Get command line arguments
 # ===============================================================================
 
 parser = argparse.ArgumentParser(description='Model accelerated policy optimization.')
-parser.add_argument('--output', type=str, required=True, help='location to store results')
-parser.add_argument('--config', type=str, required=True, help='path to config file with exp params')
+parser.add_argument('--output', '-o', type=str, required=True, help='location to store results')
+parser.add_argument('--config', '-c', type=str, required=True, help='path to config file with exp params')
+parser.add_argument('--include', '-i', type=str, required=False, help='package to import')
 args = parser.parse_args()
 OUT_DIR = args.output
-if not os.path.exists(OUT_DIR):
-    os.mkdir(OUT_DIR)
+if not os.path.exists(OUT_DIR): os.mkdir(OUT_DIR)
+if not os.path.exists(OUT_DIR+'/iterations'): os.mkdir(OUT_DIR+'/iterations')
+if not os.path.exists(OUT_DIR+'/logs'): os.mkdir(OUT_DIR+'/logs')
 with open(args.config, 'r') as f:
     job_data = eval(f.read())
+if args.include: exec("import "+args.include)
 
 # Unpack args and make files for easy access
 logger = DataLog()
@@ -127,6 +129,8 @@ for outer_iter in range(job_data['num_iter']):
     except:
         pass
 
+    t1 = timer.time()
+    logger.log_kv('data_collect_time', t1-ts)
     print("Data gathered, fitting model ...")
     if job_data['refresh_fit']:
         models = [WorldModel(state_dim=e.observation_dim, act_dim=e.action_dim, seed=SEED+123*outer_iter,
@@ -141,6 +145,9 @@ for outer_iter in range(job_data['num_iter']):
         if job_data['learn_reward']:
             reward_loss = model.fit_reward(s, a, r.reshape(-1, 1), **job_data)
             logger.log_kv('rew_loss_' + str(i), reward_loss[-1])
+    t2 = timer.time()
+    logger.log_kv('model_update_time', t2-t1)
+    
 
     # =================================
     # Refresh policy if necessary
@@ -182,6 +189,10 @@ for outer_iter in range(job_data['num_iter']):
                                    agent.logger.get_current_log().items()))
         print(tabulate(print_data))
 
+    t3 = timer.time()
+    logger.log_kv('policy_update_time', t3-t2)
+
+
     if job_data['eval_rollouts'] > 0:
         print("Performing validation rollouts ... ")
         eval_paths = evaluate_policy(agent.env, agent.policy, agent.learned_model[0], noise_level=0.0,
@@ -200,19 +211,20 @@ for outer_iter in range(job_data['num_iter']):
     if outer_iter > 0 and outer_iter % job_data['save_freq'] == 0:
         # convert to CPU before pickling
         agent.to('cpu')
-        pickle.dump(agent, open(OUT_DIR + '/agent_' + str(outer_iter) + '.pickle', 'wb'))
-        pickle.dump(policy, open(OUT_DIR + '/policy_' + str(outer_iter) + '.pickle', 'wb'))
+        pickle.dump(agent, open(OUT_DIR + '/iterations/agent_' + str(outer_iter) + '.pickle', 'wb'))
+        pickle.dump(policy, open(OUT_DIR + '/iterations/policy_' + str(outer_iter) + '.pickle', 'wb'))
         agent.to(job_data['device'])
 
     tf = timer.time()
+    logger.log_kv('eval_log_time', tf-t3)
     logger.log_kv('iter_time', tf-ts)
     print_data = sorted(filter(lambda v: np.asarray(v[1]).size == 1,
                                logger.get_current_log().items()))
     print(tabulate(print_data))
-    logger.save_log(OUT_DIR+'/')
+    logger.save_log(OUT_DIR+'/logs')
     make_train_plots(log=logger.log, keys=['rollout_score', 'eval_score', 'rollout_metric', 'eval_metric', 'samples'],
-                     save_loc=OUT_DIR+'/')
+                     save_loc=OUT_DIR+'/logs/')
 
 # final save
-pickle.dump(agent, open(OUT_DIR + '/agent_final.pickle', 'wb'))
-pickle.dump(policy, open(OUT_DIR + '/policy_final.pickle', 'wb'))
+pickle.dump(agent, open(OUT_DIR + '/iterations/agent_final.pickle', 'wb'))
+pickle.dump(policy, open(OUT_DIR + '/iterations/policy_final.pickle', 'wb'))
