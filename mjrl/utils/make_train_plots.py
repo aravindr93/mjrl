@@ -5,6 +5,7 @@ import numpy as np
 import scipy
 import csv
 from mjrl.utils.logger import DataLog
+import argparse
 
 def make_train_plots(log = None,
                      log_path = None,
@@ -20,14 +21,39 @@ def make_train_plots(log = None,
     # make plots for specified keys
     for key in keys:
         if key in log.keys():
-            plt.figure(figsize=(10,6))
+            fig = plt.figure(figsize=(10,6))
+            ax1 = fig.add_subplot(111)
             try: 
                 cum_samples = [np.sum(log[sample_key][:i]) for i in range(len(log[sample_key]))]
-                plt.plot(cum_samples, log[key])
-                plt.xlabel('samples')
+                ax1.plot(cum_samples, log[key])
+                ax1.set_xlabel('samples')
+                # mark iteration on the top axis
+                ax2 = ax1.twiny() 
+                ax2.set_xlabel('iterations', color=(.7,.7,.7))
+                ax2.tick_params(axis='x', labelcolor=(.7,.7,.7))
+                ax2.set_xlim([0, len(log[key])])
             except:
-                plt.plot(log[key])
-                plt.xlabel('iterations')
-            plt.title(key)
+                ax1.plot(log[key])
+                ax1.set_xlabel('iterations')
+            ax1.set_title(key)
             plt.savefig(save_loc+'/'+key+'.png', dpi=100)
             plt.close()
+
+# MAIN =========================================================
+# Example: python make_train_plots.py --log_path logs/log.csv --keys eval_score rollout_score save_loc logs
+def main():
+    # Parse arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '-l', '--log_path', type=str, required=True, help='path file to log.csv')
+    parser.add_argument(
+        '-k', '--keys', type=str, action='append', nargs='+', required=True, help='keys to plot')
+    parser.add_argument(
+        '-s', '--save_loc', type=str, default='', help='Path for logs')
+    args = parser.parse_args()
+
+    make_train_plots(log_path=args.log_path, keys=args.keys[0], save_loc=args.save_loc)
+
+if __name__ == '__main__':
+    main()
+
