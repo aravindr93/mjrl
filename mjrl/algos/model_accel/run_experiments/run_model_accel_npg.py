@@ -96,6 +96,7 @@ agent = ModelAccelNPG(learned_model=models, env=e, policy=policy, baseline=basel
                       normalized_step_size=job_data['step_size'], save_logs=True)
 paths = []
 init_states_buffer = []
+best_perf = -1e8
 
 for outer_iter in range(job_data['num_iter']):
 
@@ -184,10 +185,15 @@ for outer_iter in range(job_data['num_iter']):
             init_states_2 = list(s[buffer_rand_idx])
             init_states = init_states_1 + init_states_2
 
-        agent.train_step(N=len(init_states), init_states=init_states, horizon=job_data['horizon'])
+        statistics = agent.train_step(N=len(init_states), init_states=init_states, horizon=job_data['horizon'])
         print_data = sorted(filter(lambda v: np.asarray(v[1]).size == 1,
                                    agent.logger.get_current_log().items()))
         print(tabulate(print_data))
+
+    # track best performing policy 
+    if statistics[0] > best_perf: # statistics = [mean_return, std_return, min_return, max_return]
+        best_policy = copy.deepcopy(policy) # safe as policy network is clamped to CPU
+        best_perf = statistics[0]
 
     t3 = timer.time()
     logger.log_kv('policy_update_time', t3-t2)
@@ -214,6 +220,7 @@ for outer_iter in range(job_data['num_iter']):
         pickle.dump(agent, open(OUT_DIR + '/iterations/agent_' + str(outer_iter) + '.pickle', 'wb'))
         pickle.dump(policy, open(OUT_DIR + '/iterations/policy_' + str(outer_iter) + '.pickle', 'wb'))
         agent.to(job_data['device'])
+        pickle.dump(best_policy, open(OUT_DIR + '/iterations/best_policy.pickle', 'wb'))
 
     tf = timer.time()
     logger.log_kv('eval_log_time', tf-t3)
@@ -222,7 +229,7 @@ for outer_iter in range(job_data['num_iter']):
                                logger.get_current_log().items()))
     print(tabulate(print_data))
     logger.save_log(OUT_DIR+'/logs')
-    make_train_plots(log=logger.log, keys=['rollout_score', 'eval_score', 'rollout_metric', 'eval_metric', 'samples'],
+    make_train_plots(log=logger.log, keys=['rollout_score', 'eval_score', 'rollout_metric', 'eval_metric'],
                      save_loc=OUT_DIR+'/logs/')
 
 # final save
