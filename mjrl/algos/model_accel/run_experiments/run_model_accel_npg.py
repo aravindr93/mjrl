@@ -59,6 +59,7 @@ if 'device' not in job_data.keys():         job_data['device'] = 'cpu'
 if 'hvp_frac' not in job_data.keys():       job_data['hvp_frac'] = 1.0
 if 'start_state' not in job_data.keys():    job_data['start_state'] = 'init'
 if 'learn_reward' not in job_data.keys():   job_data['learn_reward'] = True
+if 'num_cpu' not in job_data.keys():        job_data['num_cpu'] = 1
 
 assert job_data['start_state'] in ['init', 'buffer']
 with open(EXP_FILE, 'w') as f:  json.dump(job_data, f, indent=4)
@@ -106,7 +107,7 @@ for outer_iter in range(job_data['num_iter']):
 
     samples_to_collect = job_data['init_samples'] if outer_iter == 0 else job_data['iter_samples']
     iter_paths = sampler.sample_data_batch(samples_to_collect, agent.env, 
-                    agent.policy, eval_mode=False, base_seed=SEED + outer_iter)
+                    agent.policy, eval_mode=False, base_seed=SEED + outer_iter, num_cpu=job_data['num_cpu'])
     for p in iter_paths:
         paths.append(p)
         init_states_buffer.append(p['observations'][0])
