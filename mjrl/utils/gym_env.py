@@ -87,6 +87,7 @@ class GymEnv(object):
         return self.reset(seed)
 
     def step(self, action):
+        action = action.clip(self.action_space.low, self.action_space.high)
         if self.act_repeat == 1: 
             return self.env.step(action)
         else:

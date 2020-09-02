@@ -60,6 +60,7 @@ if 'hvp_frac' not in job_data.keys():       job_data['hvp_frac'] = 1.0
 if 'start_state' not in job_data.keys():    job_data['start_state'] = 'init'
 if 'learn_reward' not in job_data.keys():   job_data['learn_reward'] = True
 if 'num_cpu' not in job_data.keys():        job_data['num_cpu'] = 1
+if 'npg_hp' not in job_data.keys():         job_data['npg_hp'] = dict()
 
 assert job_data['start_state'] in ['init', 'buffer']
 with open(EXP_FILE, 'w') as f:  json.dump(job_data, f, indent=4)
@@ -93,11 +94,11 @@ if 'init_policy' in job_data.keys():
 baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=256, epochs=2,  learn_rate=1e-3,
                        use_gpu=(True if job_data['device'] == 'cuda' else False))               
 agent = ModelAccelNPG(learned_model=models, env=e, policy=policy, baseline=baseline, seed=SEED,
-                      # hvp_sample_frac=job_data['hvp_frac'],
-                      normalized_step_size=job_data['step_size'], save_logs=True)
+                      normalized_step_size=job_data['step_size'], save_logs=True, **job_data['npg_hp'])
 paths = []
 init_states_buffer = []
 best_perf = -1e8
+best_policy = copy.deepcopy(policy)
 
 for outer_iter in range(job_data['num_iter']):
 
@@ -186,19 +187,13 @@ for outer_iter in range(job_data['num_iter']):
             init_states_2 = list(s[buffer_rand_idx])
             init_states = init_states_1 + init_states_2
 
-        statistics = agent.train_step(N=len(init_states), init_states=init_states, horizon=job_data['horizon'])
+        agent.train_step(N=len(init_states), init_states=init_states, horizon=job_data['horizon'])
         print_data = sorted(filter(lambda v: np.asarray(v[1]).size == 1,
                                    agent.logger.get_current_log().items()))
         print(tabulate(print_data))
 
-    # track best performing policy 
-    if statistics[0] > best_perf: # statistics = [mean_return, std_return, min_return, max_return]
-        best_policy = copy.deepcopy(policy) # safe as policy network is clamped to CPU
-        best_perf = statistics[0]
-
     t3 = timer.time()
     logger.log_kv('policy_update_time', t3-t2)
-
 
     if job_data['eval_rollouts'] > 0:
         print("Performing validation rollouts ... ")
@@ -212,16 +207,26 @@ for outer_iter in range(job_data['num_iter']):
         except:
             pass
     else:
+        eval_score = -1e8
         eval_paths = []
 
-    exp_data = dict(log=logger.log, rollout_paths=iter_paths, eval_paths=eval_paths)
+    # exp_data = dict(log=logger.log, rollout_paths=iter_paths, eval_paths=eval_paths)
+
+    import ipdb; ipdb.set_trace()
+
+    # track best performing policy
+    policy_score = eval_score if job_data['eval_rollouts'] > 0 else rollout_score
+    if policy_score > best_perf:
+        best_policy = copy.deepcopy(policy) # safe as policy network is clamped to CPU
+        best_perf = policy_score
+
     if outer_iter > 0 and outer_iter % job_data['save_freq'] == 0:
         # convert to CPU before pickling
         agent.to('cpu')
         pickle.dump(agent, open(OUT_DIR + '/iterations/agent_' + str(outer_iter) + '.pickle', 'wb'))
         pickle.dump(policy, open(OUT_DIR + '/iterations/policy_' + str(outer_iter) + '.pickle', 'wb'))
-        agent.to(job_data['device'])
         pickle.dump(best_policy, open(OUT_DIR + '/iterations/best_policy.pickle', 'wb'))
+        agent.to(job_data['device'])
 
     tf = timer.time()
     logger.log_kv('eval_log_time', tf-t3)
