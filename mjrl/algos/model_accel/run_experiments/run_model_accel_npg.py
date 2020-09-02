@@ -210,10 +210,6 @@ for outer_iter in range(job_data['num_iter']):
         eval_score = -1e8
         eval_paths = []
 
-    # exp_data = dict(log=logger.log, rollout_paths=iter_paths, eval_paths=eval_paths)
-
-    import ipdb; ipdb.set_trace()
-
     # track best performing policy
     policy_score = eval_score if job_data['eval_rollouts'] > 0 else rollout_score
     if policy_score > best_perf:
