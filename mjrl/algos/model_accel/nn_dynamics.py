@@ -97,15 +97,23 @@ class WorldModel:
        
         # set network transformations
         if set_transformations:
-            s_mean, s_sigma = torch.mean(s, dim=0), torch.std(s, dim=0)
-            a_mean, a_sigma = torch.mean(a, dim=0), torch.std(a, dim=0)
-            out_mean, out_sigma = torch.mean(sp-s, dim=0), torch.std(sp-s, dim=0)
-            self.dynamics_net.set_transformations(s_mean, s_sigma, a_mean, a_sigma, out_mean, out_sigma)
+            s_shift, a_shift = torch.mean(s, dim=0), torch.mean(a, dim=0)
+            s_scale, a_scale = torch.mean(torch.abs(s - s_shift), dim=0), torch.mean(torch.abs(a - a_shift), dim=0)
+            out_shift = torch.mean(sp-s, dim=0) if self.dynamics_net.residual else torch.mean(sp, dim=0)
+            out_scale = torch.mean(torch.abs(sp-s-out_shift), dim=0) if self.dynamics_net.residual else torch.mean(torch.abs(sp-out_shift), dim=0)
+            self.dynamics_net.set_transformations(s_shift, s_scale, a_shift, a_scale, out_shift, out_scale)
 
-        # call the generic fit function
-        X = (s, a) ; Y = sp
-        return fit_model(self.dynamics_net, X, Y, self.dynamics_opt, self.dynamics_loss,
-                         fit_mb_size, fit_epochs, max_steps=max_steps)
+        # prepare dataf for learning
+        if self.dynamics_net.residual:  
+            X = (s, a) ; Y = (sp - s - out_shift) / (out_scale + 1e-8)
+        else:
+            X = (s, a) ; Y = (sp - out_shift) / (out_scale + 1e-8)
+        # disable output transformations to learn in the transformed space
+        self.dynamics_net._apply_out_transforms = False
+        return_vals =  fit_model(self.dynamics_net, X, Y, self.dynamics_opt, self.dynamics_loss,
+                                 fit_mb_size, fit_epochs, max_steps=max_steps)
+        self.dynamics_net._apply_out_transforms = True
+        return return_vals
 
     def fit_reward(self, s, a, r, fit_mb_size, fit_epochs, max_steps=1e4, 
                    set_transformations=True, *args, **kwargs):
@@ -125,10 +133,10 @@ class WorldModel:
        
         # set network transformations
         if set_transformations:
-            s_mean, s_sigma = torch.mean(s, dim=0), torch.std(s, dim=0)
-            a_mean, a_sigma = torch.mean(a, dim=0), torch.std(a, dim=0)
-            r_mean, r_sigma = torch.mean(r, dim=0), torch.std(r, dim=0)
-            self.reward_net.set_transformations(s_mean, s_sigma, a_mean, a_sigma, r_mean, r_sigma)
+            s_shift, a_shift = torch.mean(s, dim=0), torch.mean(a, dim=0)
+            s_scale, a_scale = torch.mean(torch.abs(s-s_shift), dim=0), torch.mean(torch.abs(a-a_shift), dim=0)
+            r_shift, r_scale = torch.mean(r, dim=0), torch.mean(torch.abs(r-r_shift), dim=0)
+            self.reward_net.set_transformations(s_shift, s_scale, a_shift, a_scale, r_shift, r_scale)
 
         # get next state prediction
         sp = self.dynamics_net.forward(s, a).detach().clone()
@@ -157,12 +165,12 @@ class WorldModel:
 
 class DynamicsNet(nn.Module):
     def __init__(self, state_dim, act_dim, hidden_size=(64,64),
-                 s_mean = None,
-                 s_sigma = None,
-                 a_mean = None,
-                 a_sigma = None,
-                 out_mean = None,
-                 out_sigma = None,
+                 s_shift = None,
+                 s_scale = None,
+                 a_shift = None,
+                 a_scale = None,
+                 out_shift = None,
+                 out_scale = None,
                  out_dim = None,
                  residual = True,
                  seed=123,
@@ -179,83 +187,85 @@ class DynamicsNet(nn.Module):
                                         for i in range(len(self.layer_sizes)-1)])
         self.nonlinearity = torch.relu
         self.residual, self.use_mask = residual, use_mask
-        self.set_transformations(s_mean, s_sigma, a_mean, a_sigma, out_mean, out_sigma)
+        self._apply_out_transforms = True
+        self.set_transformations(s_shift, s_scale, a_shift, a_scale, out_shift, out_scale)
 
-    def set_transformations(self, s_mean=None, s_sigma=None,
-                            a_mean=None, a_sigma=None,
-                            out_mean=None, out_sigma=None):
+    def set_transformations(self, s_shift=None, s_scale=None,
+                            a_shift=None, a_scale=None,
+                            out_shift=None, out_scale=None):
 
-        if s_mean is None:
-            self.s_mean     = torch.zeros(self.state_dim)
-            self.s_sigma    = torch.ones(self.state_dim)
-            self.a_mean     = torch.zeros(self.act_dim)
-            self.a_sigma    = torch.ones(self.act_dim)
-            self.out_mean   = torch.zeros(self.out_dim)
-            self.out_sigma  = torch.ones(self.out_dim)
-        elif type(s_mean) == torch.Tensor:
-            self.s_mean, self.s_sigma = s_mean, s_sigma
-            self.a_mean, self.a_sigma = a_mean, a_sigma
-            self.out_mean, self.out_sigma = out_mean, out_sigma
-        elif type(s_mean) == np.ndarray:
-            self.s_mean     = torch.from_numpy(np.float32(s_mean))
-            self.s_sigma    = torch.from_numpy(np.float32(s_sigma))
-            self.a_mean     = torch.from_numpy(np.float32(a_mean))
-            self.a_sigma    = torch.from_numpy(np.float32(a_sigma))
-            self.out_mean   = torch.from_numpy(np.float32(out_mean))
-            self.out_sigma  = torch.from_numpy(np.float32(out_sigma))
+        if s_shift is None:
+            self.s_shift     = torch.zeros(self.state_dim)
+            self.s_scale    = torch.ones(self.state_dim)
+            self.a_shift     = torch.zeros(self.act_dim)
+            self.a_scale    = torch.ones(self.act_dim)
+            self.out_shift   = torch.zeros(self.out_dim)
+            self.out_scale  = torch.ones(self.out_dim)
+        elif type(s_shift) == torch.Tensor:
+            self.s_shift, self.s_scale = s_shift, s_scale
+            self.a_shift, self.a_scale = a_shift, a_scale
+            self.out_shift, self.out_scale = out_shift, out_scale
+        elif type(s_shift) == np.ndarray:
+            self.s_shift     = torch.from_numpy(np.float32(s_shift))
+            self.s_scale    = torch.from_numpy(np.float32(s_scale))
+            self.a_shift     = torch.from_numpy(np.float32(a_shift))
+            self.a_scale    = torch.from_numpy(np.float32(a_scale))
+            self.out_shift   = torch.from_numpy(np.float32(out_shift))
+            self.out_scale  = torch.from_numpy(np.float32(out_scale))
         else:
             print("Unknown type for transformations")
             quit()
 
         device = next(self.parameters()).data.device
-        self.s_mean, self.s_sigma = self.s_mean.to(device), self.s_sigma.to(device)
-        self.a_mean, self.a_sigma = self.a_mean.to(device), self.a_sigma.to(device)
-        self.out_mean, self.out_sigma = self.out_mean.to(device), self.out_sigma.to(device)
+        self.s_shift, self.s_scale = self.s_shift.to(device), self.s_scale.to(device)
+        self.a_shift, self.a_scale = self.a_shift.to(device), self.a_scale.to(device)
+        self.out_shift, self.out_scale = self.out_shift.to(device), self.out_scale.to(device)
         # if some state dimensions have very small variations, we will force it to zero
-        self.mask = self.out_sigma >= 1e-6
+        self.mask = self.out_scale >= 1e-8
 
-        self.transformations = dict(s_mean=self.s_mean, s_sigma=self.s_sigma,
-                                    a_mean=self.a_mean, a_sigma=self.a_sigma,
-                                    out_mean=self.out_mean, out_sigma=self.out_sigma)
+        self.transformations = dict(s_shift=self.s_shift, s_scale=self.s_scale,
+                                    a_shift=self.a_shift, a_scale=self.a_scale,
+                                    out_shift=self.out_shift, out_scale=self.out_scale)
 
     def forward(self, s, a):
         if s.dim() != a.dim():
             print("State and action inputs should be of the same size")
         # normalize inputs
-        s_in = (s - self.s_mean)/(self.s_sigma + 1e-6)
-        a_in = (a - self.a_mean)/(self.a_sigma + 1e-6)
+        s_in = (s - self.s_shift)/(self.s_scale + 1e-8)
+        a_in = (a - self.a_shift)/(self.a_scale + 1e-8)
         out = torch.cat([s_in, a_in], -1)
         for i in range(len(self.fc_layers)-1):
             out = self.fc_layers[i](out)
             out = self.nonlinearity(out)
         out = self.fc_layers[-1](out)
-        out = out * self.out_sigma + self.out_mean
-        out = out * self.mask if self.use_mask else out
-        out = out + s if self.residual else out
+        if self._apply_out_transforms:
+            out = out * (self.out_scale + 1e-8) + self.out_shift
+            out = out * self.mask if self.use_mask else out
+            out = out + s if self.residual else out
         return out
 
     def get_params(self):
         network_weights = [p.data for p in self.parameters()]
-        transforms = (self.s_mean, self.s_sigma,
-                      self.a_mean, self.a_sigma,
-                      self.out_mean, self.out_sigma)
+        transforms = (self.s_shift, self.s_scale,
+                      self.a_shift, self.a_scale,
+                      self.out_shift, self.out_scale)
         return dict(weights=network_weights, transforms=transforms)
 
     def set_params(self, new_params):
         new_weights = new_params['weights']
-        s_mean, s_sigma, a_mean, a_sigma, out_mean, out_sigma = new_params['transforms']
+        s_shift, s_scale, a_shift, a_scale, out_shift, out_scale = new_params['transforms']
         for idx, p in enumerate(self.parameters()):
             p.data = new_weights[idx]
-        self.set_transformations(s_mean, s_sigma, a_mean, a_sigma, out_mean, out_sigma)
+        self.set_transformations(s_shift, s_scale, a_shift, a_scale, out_shift, out_scale)
 
 
 class RewardNet(nn.Module):
     def __init__(self, state_dim, act_dim, 
                  hidden_size=(64,64),
-                 s_mean = None,
-                 s_sigma = None,
-                 a_mean = None,
-                 a_sigma = None,
+                 s_shift = None,
+                 s_scale = None,
+                 a_shift = None,
+                 a_scale = None,
                  seed=123,
                  ):
         super(RewardNet, self).__init__()
@@ -266,39 +276,39 @@ class RewardNet(nn.Module):
         self.fc_layers = nn.ModuleList([nn.Linear(self.layer_sizes[i], self.layer_sizes[i+1])
                                         for i in range(len(self.layer_sizes)-1)])
         self.nonlinearity = torch.relu
-        self.set_transformations(s_mean, s_sigma, a_mean, a_sigma)
+        self.set_transformations(s_shift, s_scale, a_shift, a_scale)
 
-    def set_transformations(self, s_mean=None, s_sigma=None,
-                            a_mean=None, a_sigma=None,
-                            out_mean=None, out_sigma=None):
+    def set_transformations(self, s_shift=None, s_scale=None,
+                            a_shift=None, a_scale=None,
+                            out_shift=None, out_scale=None):
 
-        if s_mean is None:
-            self.s_mean, self.s_sigma       = torch.zeros(self.state_dim), torch.ones(self.state_dim)
-            self.a_mean, self.a_sigma       = torch.zeros(self.act_dim), torch.ones(self.act_dim)
-            self.sp_mean, self.sp_sigma     = torch.zeros(self.state_dim), torch.ones(self.state_dim)
-            self.out_mean, self.out_sigma   = 0.0, 1.0 
-        elif type(s_mean) == torch.Tensor:
-            self.s_mean, self.s_sigma       = s_mean, s_sigma
-            self.a_mean, self.a_sigma       = a_mean, a_sigma
-            self.sp_mean, self.sp_sigma     = s_mean, s_sigma
-            self.out_mean, self.out_sigma   = out_mean, out_sigma
-        elif type(s_mean) == np.ndarray:
-            self.s_mean, self.s_sigma       = torch.from_numpy(s_mean).float(), torch.from_numpy(s_sigma).float()
-            self.a_mean, self.a_sigma       = torch.from_numpy(a_mean).float(), torch.from_numpy(a_sigma).float()
-            self.sp_mean, self.sp_sigma     = torch.from_numpy(s_mean).float(), torch.from_numpy(s_sigma).float()
-            self.out_mean, self.out_sigma   = out_mean, out_sigma
+        if s_shift is None:
+            self.s_shift, self.s_scale       = torch.zeros(self.state_dim), torch.ones(self.state_dim)
+            self.a_shift, self.a_scale       = torch.zeros(self.act_dim), torch.ones(self.act_dim)
+            self.sp_shift, self.sp_scale     = torch.zeros(self.state_dim), torch.ones(self.state_dim)
+            self.out_shift, self.out_scale   = 0.0, 1.0 
+        elif type(s_shift) == torch.Tensor:
+            self.s_shift, self.s_scale       = s_shift, s_scale
+            self.a_shift, self.a_scale       = a_shift, a_scale
+            self.sp_shift, self.sp_scale     = s_shift, s_scale
+            self.out_shift, self.out_scale   = out_shift, out_scale
+        elif type(s_shift) == np.ndarray:
+            self.s_shift, self.s_scale       = torch.from_numpy(s_shift).float(), torch.from_numpy(s_scale).float()
+            self.a_shift, self.a_scale       = torch.from_numpy(a_shift).float(), torch.from_numpy(a_scale).float()
+            self.sp_shift, self.sp_scale     = torch.from_numpy(s_shift).float(), torch.from_numpy(s_scale).float()
+            self.out_shift, self.out_scale   = out_shift, out_scale
         else:
             print("Unknown type for transformations")
             quit()
 
         device = next(self.parameters()).data.device
-        self.s_mean, self.s_sigma   = self.s_mean.to(device), self.s_sigma.to(device)
-        self.a_mean, self.a_sigma   = self.a_mean.to(device), self.a_sigma.to(device)
-        self.sp_mean, self.sp_sigma = self.sp_mean.to(device), self.sp_sigma.to(device)
+        self.s_shift, self.s_scale   = self.s_shift.to(device), self.s_scale.to(device)
+        self.a_shift, self.a_scale   = self.a_shift.to(device), self.a_scale.to(device)
+        self.sp_shift, self.sp_scale = self.sp_shift.to(device), self.sp_scale.to(device)
 
-        self.transformations = dict(s_mean=self.s_mean, s_sigma=self.s_sigma,
-                                    a_mean=self.a_mean, a_sigma=self.a_sigma,
-                                    out_mean=self.out_mean, out_sigma=self.out_sigma)
+        self.transformations = dict(s_shift=self.s_shift, s_scale=self.s_scale,
+                                    a_shift=self.a_shift, a_scale=self.a_scale,
+                                    out_shift=self.out_shift, out_scale=self.out_scale)
 
     def forward(self, s, a, sp):
         # The reward will be parameterized as r = f_theta(s, a, s').
@@ -306,29 +316,29 @@ class RewardNet(nn.Module):
         if s.dim() != a.dim():
             print("State and action inputs should be of the same size")
         # normalize all the inputs
-        s = (s - self.s_mean) / (self.s_sigma + 1e-6)
-        a = (a - self.a_mean) / (self.a_sigma + 1e-6)
-        sp = (sp - self.sp_mean) / (self.sp_sigma + 1e-6)
+        s = (s - self.s_shift) / (self.s_scale + 1e-8)
+        a = (a - self.a_shift) / (self.a_scale + 1e-8)
+        sp = (sp - self.sp_shift) / (self.sp_scale + 1e-8)
         out = torch.cat([s, a, sp], -1)
         for i in range(len(self.fc_layers)-1):
             out = self.fc_layers[i](out)
             out = self.nonlinearity(out)
         out = self.fc_layers[-1](out)
-        out = out * (self.out_sigma + 1e-6) + self.out_mean
+        out = out * (self.out_scale + 1e-8) + self.out_shift
         return out
 
     def get_params(self):
         network_weights = [p.data for p in self.parameters()]
-        transforms = (self.s_mean, self.s_sigma,
-                      self.a_mean, self.a_sigma)
+        transforms = (self.s_shift, self.s_scale,
+                      self.a_shift, self.a_scale)
         return dict(weights=network_weights, transforms=transforms)
 
     def set_params(self, new_params):
         new_weights = new_params['weights']
-        s_mean, s_sigma, a_mean, a_sigma = new_params['transforms']
+        s_shift, s_scale, a_shift, a_scale = new_params['transforms']
         for idx, p in enumerate(self.parameters()):
             p.data = new_weights[idx]
-        self.set_transformations(s_mean, s_sigma, a_mean, a_sigma)
+        self.set_transformations(s_shift, s_scale, a_shift, a_scale)
 
 
 def fit_model(nn_model, X, Y, optimizer, loss_func,

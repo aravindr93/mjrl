@@ -11,7 +11,9 @@ def make_train_plots(log = None,
                      log_path = None,
                      keys = None,
                      save_loc = None,
-                     sample_key = 'num_samples'):
+                     sample_key = 'num_samples',
+                     x_scale = 1.0,
+                     y_scale = 1.0):
     if log is None and log_path is None:
         print("Need to provide either the log or path to a log file")
     if log is None:
@@ -23,9 +25,9 @@ def make_train_plots(log = None,
         if key in log.keys():
             fig = plt.figure(figsize=(10,6))
             ax1 = fig.add_subplot(111)
-            try: 
-                cum_samples = [np.sum(log[sample_key][:i]) for i in range(len(log[sample_key]))]
-                ax1.plot(cum_samples, log[key])
+            try:
+                cum_samples = [np.sum(log[sample_key][:i]) * x_scale for i in range(len(log[sample_key]))]
+                ax1.plot(cum_samples, [elem * y_scale for elem in log[key]])
                 ax1.set_xlabel('samples')
                 # mark iteration on the top axis
                 ax2 = ax1.twiny() 

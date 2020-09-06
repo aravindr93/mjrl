@@ -61,6 +61,7 @@ if 'start_state' not in job_data.keys():    job_data['start_state'] = 'init'
 if 'learn_reward' not in job_data.keys():   job_data['learn_reward'] = True
 if 'num_cpu' not in job_data.keys():        job_data['num_cpu'] = 1
 if 'npg_hp' not in job_data.keys():         job_data['npg_hp'] = dict()
+if 'act_repeat' not in job_data.keys():     job_data['act_repeat'] = 1
 
 assert job_data['start_state'] in ['init', 'buffer']
 with open(EXP_FILE, 'w') as f:  json.dump(job_data, f, indent=4)
@@ -82,8 +83,32 @@ def buffer_size(paths_list):
 np.random.seed(SEED)
 torch.random.manual_seed(SEED)
 
-e = GymEnv(ENV_NAME)
-e.set_seed(SEED)
+if ENV_NAME.split('_')[0] == 'dmc':
+    # import only if necessary (not part of package requirements)
+    import dmc2gym
+    backend, domain, task = ENV_NAME.split('_')
+    e = dmc2gym.make(domain_name=domain, task_name=task, seed=SEED)
+    e = GymEnv(e, act_repeat=job_data['act_repeat'])
+else:
+    e = GymEnv(ENV_NAME, act_repeat=job_data['act_repeat'])
+    e.set_seed(SEED)
+
+# check for reward and termination functions
+if 'reward_file' in job_data.keys():
+    import sys
+    splits = job_data['reward_file'].split("/")
+    dirpath = "" if splits[0] == "" else os.path.dirname(os.path.abspath(__file__))
+    for x in splits[:-1]: dirpath = dirpath + "/" + x
+    filename = splits[-1].split(".")[0]
+    sys.path.append(dirpath)
+    # import ipdb; ipdb.set_trace()
+    exec("from "+filename+" import *")
+if 'reward_function' not in globals():
+    reward_function = getattr(e.env.env, "compute_path_rewards", None)
+    job_data['learn_reward'] = True if reward_function is None else False
+if 'termination_function' not in globals():
+    termination_function = getattr(e.env.env, "truncate_paths", None)
+if 'obs_mask' in globals(): e.obs_mask = obs_mask
 
 models = [WorldModel(state_dim=e.observation_dim, act_dim=e.action_dim, seed=SEED+i, 
                      **job_data) for i in range(job_data['num_models'])]
@@ -91,10 +116,13 @@ policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'],
                 init_log_std=job_data['init_log_std'], min_log_std=job_data['min_log_std'])
 if 'init_policy' in job_data.keys():
     if job_data['init_policy'] != None: policy = pickle.load(open(job_data['init_policy'], 'rb'))
-baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=256, epochs=2,  learn_rate=1e-3,
+baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=256, epochs=1,  learn_rate=1e-3,
                        use_gpu=(True if job_data['device'] == 'cuda' else False))               
 agent = ModelAccelNPG(learned_model=models, env=e, policy=policy, baseline=baseline, seed=SEED,
-                      normalized_step_size=job_data['step_size'], save_logs=True, **job_data['npg_hp'])
+                      normalized_step_size=job_data['step_size'], save_logs=True, 
+                      reward_function=reward_function, termination_function=termination_function,
+                      **job_data['npg_hp'])
+
 paths = []
 init_states_buffer = []
 best_perf = -1e8
@@ -232,7 +260,7 @@ for outer_iter in range(job_data['num_iter']):
     print(tabulate(print_data))
     logger.save_log(OUT_DIR+'/logs')
     make_train_plots(log=logger.log, keys=['rollout_score', 'eval_score', 'rollout_metric', 'eval_metric'],
-                     save_loc=OUT_DIR+'/logs/')
+                     x_scale=float(job_data['act_repeat']), y_scale=1.0, save_loc=OUT_DIR+'/logs/')
 
 # final save
 pickle.dump(agent, open(OUT_DIR + '/iterations/agent_final.pickle', 'wb'))

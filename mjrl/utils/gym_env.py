@@ -14,8 +14,9 @@ class EnvSpec(object):
 
 
 class GymEnv(object):
-    def __init__(self, env, env_kwargs=None, 
-                 act_repeat=1, *args, **kwargs):
+    def __init__(self, env, env_kwargs=None,
+                 obs_mask=None, act_repeat=1, 
+                 *args, **kwargs):
     
         # get the correct env behavior
         if type(env) == str:
@@ -53,6 +54,9 @@ class GymEnv(object):
         # Specs
         self.spec = EnvSpec(self._observation_dim, self._action_dim, self._horizon)
 
+        # obs mask
+        self.obs_mask = np.ones(self._observation_dim) if obs_mask is None else obs_mask
+
     @property
     def action_dim(self):
         return self._action_dim
@@ -89,14 +93,14 @@ class GymEnv(object):
     def step(self, action):
         action = action.clip(self.action_space.low, self.action_space.high)
         if self.act_repeat == 1: 
-            return self.env.step(action)
+            obs, cum_reward, done, ifo = self.env.step(action)
         else:
             cum_reward = 0.0
             for i in range(self.act_repeat):
                 obs, reward, done, ifo = self.env.step(action)
                 cum_reward += reward
-                if done: return obs, cum_reward, done, ifo
-            return obs, cum_reward, done, ifo
+                if done: break
+        return self.obs_mask * obs, cum_reward, done, ifo
 
     def render(self):
         try:
@@ -113,9 +117,9 @@ class GymEnv(object):
 
     def get_obs(self):
         try:
-            return self.env.env._get_obs()
+            return self.obs_mask * self.env.env.get_obs()
         except:
-            return self.env.env.get_obs()
+            return self.obs_mask * self.env.env._get_obs()
 
     def get_env_infos(self):
         try:

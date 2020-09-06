@@ -26,6 +26,8 @@ class ModelAccelNPG(NPG):
                  kappa=5.0,
                  plan_horizon=10,
                  plan_paths=100,
+                 reward_function=None,
+                 termination_function=None,
                  **kwargs):
         super(ModelAccelNPG, self).__init__(**kwargs)
         if learned_model is None:
@@ -36,6 +38,7 @@ class ModelAccelNPG(NPG):
         else:
             self.learned_model = learned_model
         self.refine, self.kappa, self.plan_horizon, self.plan_paths = refine, kappa, plan_horizon, plan_paths
+        self.reward_function, self.termination_function = reward_function, termination_function
 
     def to(self, device):
         # Convert all the networks (except policy network which is clamped to CPU)
@@ -61,6 +64,8 @@ class ModelAccelNPG(NPG):
                    num_cpu='max',
                    env_kwargs=None,
                    init_states=None,
+                   reward_function=None,
+                   termination_function=None,
                    truncate_lim=None,
                    truncate_reward=0.0,
                    **kwargs,
@@ -81,6 +86,12 @@ class ModelAccelNPG(NPG):
             print("Unsupported environment format")
             raise AttributeError
 
+        # get correct behavior for reward and termination
+        reward_function = self.reward_function if reward_function is None else reward_function
+        termination_function = self.termination_function if termination_function is None else termination_function
+        if reward_function: assert callable(reward_function)
+        if termination_function: assert callable(termination_function)
+
         # simulate trajectories with the learned model(s)
         # we want to use the same task instances (e.g. goal locations) for each model in ensemble
         paths = []
@@ -100,7 +111,7 @@ class ModelAccelNPG(NPG):
             if model.learn_reward:
                 model.compute_path_rewards(rollouts)
             else:
-               self.env.env.env.compute_path_rewards(rollouts)
+               rollouts = reward_function(rollouts)
             num_traj, horizon, state_dim = rollouts['observations'].shape
             for i in range(num_traj):
                 path = dict()
@@ -117,10 +128,7 @@ class ModelAccelNPG(NPG):
         # a function that can terminate paths appropriately.
         # Otherwise, termination is not considered.
 
-        try:
-            paths = self.env.env.env.truncate_paths(paths)
-        except AttributeError:
-            pass
+        if callable(termination_function): paths = termination_function(paths)
 
         # remove paths that are too short
         paths = [path for path in paths if path['observations'].shape[0] >= 5]
