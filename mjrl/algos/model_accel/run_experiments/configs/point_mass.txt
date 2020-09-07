@@ -12,7 +12,8 @@
 'exp_notes'     :   'Toy experiment for initial trial.',
 'save_freq'     :   1,
 'device'        :   'cpu',
-'learn_reward'  :   True,
+'learn_reward'  :   False,
+'reward_file'   :   'utils/reward_functions/mjrl_point_mass.py',
 
 # dynamics learning
 

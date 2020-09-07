@@ -46,6 +46,7 @@ class PointMassEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         # path["rewards"] should have shape (num_traj, horizon)
         obs = paths["observations"]
         rewards = self.get_reward(obs)
+        rewards[..., :-1] = rewards[..., 1:]   # shift index by 1 to have r(s,a)=r(s')
         paths["rewards"] = rewards if rewards.shape[0] > 1 else rewards.ravel()
         return paths
 
