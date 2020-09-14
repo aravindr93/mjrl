@@ -8,6 +8,7 @@ import os
 import time as timer
 from torch.autograd import Variable
 from mjrl.utils.gym_env import GymEnv
+from mjrl.utils.replay_buffer import ReplayBuffer
 from mjrl.algos.model_accel.nn_dynamics import WorldModel
 import mjrl.samplers.core as trajectory_sampler
 
@@ -15,170 +16,67 @@ import mjrl.samplers.core as trajectory_sampler
 import mjrl.utils.process_samples as process_samples
 from mjrl.utils.logger import DataLog
 from mjrl.algos.model_accel.sampling import policy_rollout
+from mjrl.utils.cg_solve import cg_solve
 
 # Import NPG
 from mjrl.algos.npg_cg import NPG
 
 
 class NPGSAC(NPG):
-    def __init__(self, learned_model=None,
-                 refine=False,
-                 kappa=5.0,
-                 plan_horizon=10,
-                 plan_paths=100,
+    def __init__(self, 
+                 gamma=0.99,
+                 replay_buffer_size=1e6,
                  **kwargs):
         super(NPGSAC, self).__init__(**kwargs)
-        if learned_model is None:
-            print("Algorithm requires a (list of) learned dynamics model")
-            quit()
-        elif isinstance(learned_model, WorldModel):
-            self.learned_model = [learned_model]
-        else:
-            self.learned_model = learned_model
-        self.refine, self.kappa, self.plan_horizon, self.plan_paths = refine, kappa, plan_horizon, plan_paths
+
+        self._gamma = gamma
+        self._actor_batchsize = 2**14
+        self._replay_buffer = ReplayBuffer(replay_buffer_size)
+        
+        return
 
     def to(self, device):
         # Convert all the networks (except policy network which is clamped to CPU)
         # to the specified device
-        for model in self.learned_model:
-            model.to(device)
-        try:    self.baseline.model.to(device)
-        except: pass
+        try:    
+            self.baseline.model.to(device)
+        except: 
+            pass
+        return
 
     def is_cuda(self):
         # Check if any of the networks are on GPU
-        model_cuda = [model.is_cuda() for model in self.learned_model]
-        model_cuda = any(model_cuda)
         baseline_cuda = next(self.baseline.model.parameters()).is_cuda
-        return any([model_cuda, baseline_cuda])
+        return baseline_cuda
 
-    def train_step(self, N,
-                   env=None,
-                   sample_mode='trajectories',
-                   horizon=1e6,
-                   gamma=0.995,
-                   gae_lambda=0.97,
-                   num_cpu='max',
-                   env_kwargs=None,
-                   init_states=None,
-                   truncate_lim=None,
-                   truncate_reward=0.0,
-                   **kwargs
-                   ):
-
-        ts = timer.time()
-
-        # get the correct env behavior
-        if env is None:
-            env = self.env
-        elif type(env) == str:
-            env = GymEnv(env)
-        elif isinstance(env, GymEnv):
-            env = env
-        elif callable(env):
-            env = env(**env_kwargs)
-        else:
-            print("Unsupported environment format")
-            raise AttributeError
-
-        # simulate trajectories with the learned model(s)
-        # we want to use the same task instances (e.g. goal locations) for each model in ensemble
-        paths = []
-
-        # NOTE: We can optionally specify a set of initial states to perform the rollouts from
-        # This is useful for starting rollouts from the states in the replay buffer
-        init_states = np.array([env.reset() for _ in range(N)]) if init_states is None else init_states
-        assert type(init_states) == list
-        assert len(init_states) == N
-
-        for model in self.learned_model:
-            # dont set seed explicitly -- this will make rollouts follow tne global seed
-            rollouts = policy_rollout(num_traj=N, env=env, policy=self.policy,
-                                      learned_model=model, eval_mode=False, horizon=horizon,
-                                      init_state=init_states, seed=None)
-            # use learned reward function if available
-            if model.learn_reward:
-                model.compute_path_rewards(rollouts)
-            else:
-               self.env.env.env.compute_path_rewards(rollouts)
-            num_traj, horizon, state_dim = rollouts['observations'].shape
-            for i in range(num_traj):
-                path = dict()
-                obs = rollouts['observations'][i, :, :]
-                act = rollouts['actions'][i, :, :]
-                rew = rollouts['rewards'][i, :]
-                path['observations'] = obs
-                path['actions'] = act
-                path['rewards'] = rew
-                path['terminated'] = False
-                paths.append(path)
-
-        # NOTE: If tasks have termination condition, we will assume that the env has
-        # a function that can terminate paths appropriately.
-        # Otherwise, termination is not considered.
-
-        try:
-            paths = self.env.env.env.truncate_paths(paths)
-        except AttributeError:
-            pass
-
-        # remove paths that are too short
-        paths = [path for path in paths if path['observations'].shape[0] >= 5]
-
-        # additional truncation based on error in the ensembles
-        if truncate_lim is not None and len(self.learned_model) > 1:
-            for path in paths:
-                pred_err = np.zeros(path['observations'].shape[0] - 1)
-                for model in self.learned_model:
-                    s = path['observations'][:-1]
-                    a = path['actions'][:-1]
-                    s_next = path['observations'][1:]
-                    pred = model.predict(s, a)
-                    model_err = np.mean((s_next - pred)**2, axis=-1)
-                    pred_err = np.maximum(pred_err, model_err)
-                violations = np.where(pred_err > truncate_lim)[0]
-                truncated = (not len(violations) == 0)
-                T = violations[0] + 1 if truncated else obs.shape[0]
-                T = max(4, T)   # we don't want corner cases of very short truncation
-                path["observations"] = path["observations"][:T]
-                path["actions"] = path["actions"][:T]
-                path["rewards"] = path["rewards"][:T]
-                if truncated: path["rewards"][-1] += truncate_reward
-                path["terminated"] = False if T == obs.shape[0] else True
-
-        if self.save_logs:
-            self.logger.log_kv('time_sampling', timer.time() - ts)
-
-        self.seed = self.seed + N if self.seed is not None else self.seed
-
-        # compute returns
-        process_samples.compute_returns(paths, gamma)
-        # compute advantages
-        process_samples.compute_advantages(paths, self.baseline, gamma, gae_lambda)
-        # train from paths
-        eval_statistics = self.train_from_paths(paths)
-        eval_statistics.append(N)
+    def store(self, paths):
+        s = np.concatenate([p['observations'][:-1] for p in paths])
+        a = np.concatenate([p['actions'][:-1] for p in paths])
+        sp = np.concatenate([p['observations'][1:] for p in paths])
+        r = np.concatenate([p['rewards'][:-1] for p in paths])
+        terminated = np.concatenate([[False] * (len(p['observations']) - 2) + [p['terminated']] for p in paths])
+                
+        self._replay_buffer.store(s=s, a=a, r=r, sp=sp, terminated=terminated)
+        
         # log number of samples
         if self.save_logs:
             num_samples = np.sum([p["rewards"].shape[0] for p in paths])
             self.logger.log_kv('num_samples', num_samples)
-        # fit baseline
-        if self.save_logs:
-            ts = timer.time()
-            error_before, error_after = self.baseline.fit(paths, return_errors=True)
-            self.logger.log_kv('time_VF', timer.time()-ts)
-            self.logger.log_kv('VF_error_before', error_before)
-            self.logger.log_kv('VF_error_after', error_after)
-        else:
-            self.baseline.fit(paths)
 
-        return eval_statistics
+        return
+
+    def train_step(self, num_new_samples):
+        ts = timer.time()
+
+        critic_steps = num_new_samples
+        self._update_critic(critic_steps)
+
+        self._update_actor(self._actor_batchsize)
+
+        return
 
     def get_action(self, observation):
-        if self.refine is False:
-            return self.policy.get_action(observation)
-        else:
-            return self.get_refined_action(observation)
+        return self.policy.get_action(observation)
 
     def get_refined_action(self, observation):
         # TODO(Aravind): Implemenet this
@@ -186,3 +84,125 @@ class NPGSAC(NPG):
         # dynamics model and the policy, and should refine around the policy by
         # incorporating reward based refinement
         raise NotImplementedError
+
+    def _update_critic(self, steps):
+        num_samples = steps * self.baseline.batch_size
+        s, a, r, sp, terminated = self._replay_buffer.sample(num_samples)
+        tar_vals = self._compute_tar_vals(r, sp, terminated)
+        tar_vals = np.expand_dims(tar_vals, axis=-1)
+
+        # fit baseline
+        if self.save_logs:
+            ts = timer.time()
+            error_before, error_after = self.baseline.fit(s, a, tar_vals, return_errors=True)
+            self.logger.log_kv('time_VF', timer.time()-ts)
+            self.logger.log_kv('VF_error_before', error_before)
+            self.logger.log_kv('VF_error_after', error_after)
+        else:
+            self.baseline.fit(s, a, tar_vals)
+
+        return
+
+    def _update_actor(self, batchsize):
+        s, _, _, _, _ = self._replay_buffer.sample(batchsize)
+        
+        s_torch = torch.from_numpy(s).float()
+        a_torch = self.policy.model.forward(s_torch)
+        a_torch = a_torch + torch.randn(a_torch.shape) * torch.exp(self.policy.log_std)
+        a = a_torch.detach().numpy()
+
+        adv = self._computer_advantages(s=s, a=a)
+
+        self.train_from_batch(s, a, adv)
+
+        return
+
+    def _compute_tar_vals(self, r, sp, terminated):
+        sp_torch = torch.from_numpy(sp).float()
+        ap_torch = self.policy.model.forward(sp_torch)
+        ap_torch = ap_torch + torch.randn(ap_torch.shape) * torch.exp(self.policy.log_std)
+        ap = ap_torch.detach().numpy()
+
+        not_terminated = 1.0 - terminated.astype(np.float32)
+        next_val = self.baseline.predict(sp, ap)
+        new_val = r + self._gamma * not_terminated * next_val
+
+        return new_val
+
+    def _computer_advantages(self, s, a):
+        vals = self.baseline.predict(s, a)
+        adv = vals
+        return adv
+
+    def train_from_batch(self, s, a, adv):
+        observations = s
+        actions = a
+        advantages = adv
+
+        # Keep track of times for various computations
+        t_gLL = 0.0
+        t_FIM = 0.0
+
+        # normalize inputs if necessary
+        if self.input_normalization:
+            data_in_shift, data_in_scale = np.mean(observations, axis=0), np.std(observations, axis=0)
+            pi_in_shift, pi_in_scale = self.policy.model.in_shift.data.numpy(), self.policy.model.in_scale.data.numpy()
+            pi_out_shift, pi_out_scale = self.policy.model.out_shift.data.numpy(), self.policy.model.out_scale.data.numpy()
+            pi_in_shift = self.input_normalization * pi_in_shift + (1-self.input_normalization) * data_in_shift
+            pi_in_scale = self.input_normalization * pi_in_scale + (1-self.input_normalization) * data_in_scale
+            self.policy.model.set_transformations(pi_in_shift, pi_in_scale, pi_out_shift, pi_out_scale)
+
+        # Optimization algorithm
+        # --------------------------
+        surr_before = self.CPI_surrogate(observations, actions, advantages).data.numpy().ravel()[0]
+
+        # VPG
+        ts = timer.time()
+        vpg_grad = self.flat_vpg(observations, actions, advantages)
+        t_gLL += timer.time() - ts
+
+        # NPG
+        ts = timer.time()
+        hvp = self.build_Hvp_eval([observations, actions],
+                                  regu_coef=self.FIM_invert_args['damping'])
+        npg_grad = cg_solve(hvp, vpg_grad, x_0=vpg_grad.copy(),
+                            cg_iters=self.FIM_invert_args['iters'])
+        t_FIM += timer.time() - ts
+
+        # Step size computation
+        # --------------------------
+        if self.alpha is not None:
+            alpha = self.alpha
+            n_step_size = (alpha ** 2) * np.dot(vpg_grad.T, npg_grad)
+        else:
+            n_step_size = self.n_step_size
+            alpha = np.sqrt(np.abs(self.n_step_size / (np.dot(vpg_grad.T, npg_grad) + 1e-20)))
+
+        # Policy update
+        # --------------------------
+        curr_params = self.policy.get_param_values()
+        new_params = curr_params + alpha * npg_grad
+        self.policy.set_param_values(new_params, set_new=True, set_old=False)
+        surr_after = self.CPI_surrogate(observations, actions, advantages).data.numpy().ravel()[0]
+        kl_dist = self.kl_old_new(observations, actions).data.numpy().ravel()[0]
+        self.policy.set_param_values(new_params, set_new=True, set_old=True)
+
+        # Log information
+        if self.save_logs:
+            self.logger.log_kv('alpha', alpha)
+            self.logger.log_kv('delta', n_step_size)
+            self.logger.log_kv('time_vpg', t_gLL)
+            self.logger.log_kv('time_npg', t_FIM)
+            self.logger.log_kv('kl_dist', kl_dist)
+            self.logger.log_kv('surr_improvement', surr_after - surr_before)
+            try:
+                self.env.env.env.evaluate_success(paths, self.logger)
+            except:
+                # nested logic for backwards compatibility. TODO: clean this up.
+                try:
+                    success_rate = self.env.env.env.evaluate_success(paths)
+                    self.logger.log_kv('success_rate', success_rate)
+                except:
+                    pass
+
+        return

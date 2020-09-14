@@ -35,9 +35,28 @@ class ReplayBuffer():
         self._buffer_terminated[store_idx] = terminated
 
         self._buffer_head = (self._buffer_head + n) % self._buffer_size
-        self._current_size = min(self._current_size + n, self._buffer_size)
+        self._current_size = min(self.current_size() + n, self._buffer_size)
 
         return
+
+    def current_size(self):
+        return self._current_size
+
+    def sample(self, n):
+        curr_size = self.current_size()
+        idx = np.array([], np.int32)
+        while (idx.shape[0] < n):
+            remainder = n - idx.shape[0]
+            num_samples = min(remainder, curr_size)
+            curr_idx = np.random.choice(curr_size, num_samples, replace=False)
+            idx = np.concatenate([idx, curr_idx], axis=0)
+
+        s = self._buffer_s[idx]
+        a = self._buffer_a[idx]
+        r = self._buffer_r[idx]
+        sp = self._buffer_sp[idx]
+        terminated = self._buffer_terminated[idx]
+        return s, a, r, sp, terminated
 
     def _build_buffers(self, s, a, r, sp, terminated):
         self._buffer_s = np.empty([self._buffer_size, s.shape[-1]], dtype=s.dtype)

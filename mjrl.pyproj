@@ -5,7 +5,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>{2a362194-560d-4205-8d98-cb3dd94d3f3e}</ProjectGuid>
     <ProjectHome />
-    <StartupFile>mjrl\algos\model_accel\run_experiments\run_npgq.py</StartupFile>
+    <StartupFile>mjrl\algos\model_accel\run_experiments\run_npg_sac.py</StartupFile>
     <SearchPath />
     <WorkingDirectory>.</WorkingDirectory>
     <OutputPath>.</OutputPath>
@@ -34,7 +34,7 @@
     <Compile Include="mjrl\algos\model_accel\nn_dynamics.py" />
     <Compile Include="mjrl\algos\model_accel\npg_sac.py" />
     <Compile Include="mjrl\algos\model_accel\run_experiments\run_model_accel_npg.py" />
-    <Compile Include="mjrl\algos\model_accel\run_experiments\run_npgq.py" />
+    <Compile Include="mjrl\algos\model_accel\run_experiments\run_npg_sac.py" />
     <Compile Include="mjrl\algos\model_accel\run_experiments\sandbox\run_model_learning_mpc.py" />
     <Compile Include="mjrl\algos\model_accel\run_experiments\utils\visualize_policy.py" />
     <Compile Include="mjrl\algos\model_accel\run_experiments\utils\visualize_trajectories.py" />
