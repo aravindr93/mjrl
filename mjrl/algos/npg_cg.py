@@ -30,6 +30,7 @@ class NPG(BatchREINFORCE):
                  save_logs=False,
                  kl_dist=None,
                  input_normalization=None,
+                 device='cpu',
                  **kwargs
                  ):
         """
@@ -52,6 +53,7 @@ class NPG(BatchREINFORCE):
         self.FIM_invert_args = FIM_invert_args
         self.hvp_subsample = hvp_sample_frac
         self.running_score = None
+        self.device = device
         if save_logs: self.logger = DataLog()
         # input normalization (running average)
         self.input_normalization = input_normalization
@@ -59,30 +61,28 @@ class NPG(BatchREINFORCE):
             if self.input_normalization > 1 or self.input_normalization <= 0:
                 self.input_normalization = None
 
-    def HVP(self, observations, actions, vector, regu_coef=None):
+    def HVP(self, observations, actions, vec, regu_coef=None, device=None):
         regu_coef = self.FIM_invert_args['damping'] if regu_coef is None else regu_coef
-        vec = Variable(torch.from_numpy(vector).float(), requires_grad=False)
+        device = self.policy.device if device is None else device
+        assert type(vec) == torch.Tensor
+        assert type(regu_coef) == float
+        vec = vec.to(device)
         if self.hvp_subsample is not None and self.hvp_subsample < 0.99:
             num_samples = observations.shape[0]
             rand_idx = np.random.choice(num_samples, size=int(self.hvp_subsample*num_samples))
-            obs = observations[rand_idx]
-            act = actions[rand_idx]
-        else:
-            obs = observations
-            act = actions
-        old_dist_info = self.policy.old_dist_info(obs, act)
-        new_dist_info = self.policy.new_dist_info(obs, act)
-        mean_kl = self.policy.mean_kl(new_dist_info, old_dist_info)
+            observations = observations[rand_idx]
+            actions = actions[rand_idx]
+        mean_kl = self.policy.mean_kl(observations, actions)
         grad_fo = torch.autograd.grad(mean_kl, self.policy.trainable_params, create_graph=True)
         flat_grad = torch.cat([g.contiguous().view(-1) for g in grad_fo])
-        h = torch.sum(flat_grad*vec)
-        hvp = torch.autograd.grad(h, self.policy.trainable_params)
-        hvp_flat = np.concatenate([g.contiguous().view(-1).data.numpy() for g in hvp])
-        return hvp_flat + regu_coef*vector
+        gvp = torch.sum(flat_grad*vec)
+        hvp = torch.autograd.grad(gvp, self.policy.trainable_params)
+        hvp_flat = torch.cat([g.contiguous().view(-1) for g in hvp])
+        return hvp_flat + regu_coef*vec
 
-    def build_Hvp_eval(self, inputs, regu_coef=None):
+    def build_Hvp_eval(self, inputs, regu_coef=None, device=None):
         def eval(v):
-            full_inp = inputs + [v] + [regu_coef]
+            full_inp = inputs + [v] + [regu_coef] + [device]
             Hvp = self.HVP(*full_inp)
             return Hvp
         return eval
@@ -99,16 +99,20 @@ class NPG(BatchREINFORCE):
 
         # normalize inputs if necessary
         if self.input_normalization:
-            data_in_shift, data_in_scale = np.mean(observations, axis=0), np.std(observations, axis=0)
-            pi_in_shift, pi_in_scale = self.policy.model.in_shift.data.numpy(), self.policy.model.in_scale.data.numpy()
-            pi_out_shift, pi_out_scale = self.policy.model.out_shift.data.numpy(), self.policy.model.out_scale.data.numpy()
-            pi_in_shift = self.input_normalization * pi_in_shift + (1-self.input_normalization) * data_in_shift
-            pi_in_scale = self.input_normalization * pi_in_scale + (1-self.input_normalization) * data_in_scale
-            self.policy.model.set_transformations(pi_in_shift, pi_in_scale, pi_out_shift, pi_out_scale)
+            raise NotImplementedError
+            # data_in_shift, data_in_scale = np.mean(observations, axis=0), np.std(observations, axis=0)
+            # pi_in_shift, pi_in_scale = self.policy.model.in_shift.data.numpy(), self.policy.model.in_scale.data.numpy()
+            # pi_out_shift, pi_out_scale = self.policy.model.out_shift.data.numpy(), self.policy.model.out_scale.data.numpy()
+            # pi_in_shift = self.input_normalization * pi_in_shift + (1-self.input_normalization) * data_in_shift
+            # pi_in_scale = self.input_normalization * pi_in_scale + (1-self.input_normalization) * data_in_scale
+            # self.policy.model.set_transformations(pi_in_shift, pi_in_scale, pi_out_shift, pi_out_scale)
 
         # Optimization algorithm
         # --------------------------
-        surr_before = self.CPI_surrogate(observations, actions, advantages).data.numpy().ravel()[0]
+        pg_surr = self.pg_surrogate(observations, actions, advantages)
+        surr_before = pg_surr.to('cpu').data.numpy().ravel()[0]
+        old_mean = self.policy.forward(observations).detach().clone()
+        old_log_std = self.policy.log_std.detach().clone()
 
         # VPG
         ts = timer.time()
@@ -118,8 +122,9 @@ class NPG(BatchREINFORCE):
         # NPG
         ts = timer.time()
         hvp = self.build_Hvp_eval([observations, actions],
-                                  regu_coef=self.FIM_invert_args['damping'])
-        npg_grad = cg_solve(hvp, vpg_grad, x_0=vpg_grad.copy(),
+                                  regu_coef=self.FIM_invert_args['damping'],
+                                  device=vpg_grad.device)
+        npg_grad = cg_solve(f_Ax=hvp, b=vpg_grad, x_0=vpg_grad.clone(),
                             cg_iters=self.FIM_invert_args['iters'])
         t_FIM += timer.time() - ts
 
@@ -127,19 +132,21 @@ class NPG(BatchREINFORCE):
         # --------------------------
         if self.alpha is not None:
             alpha = self.alpha
-            n_step_size = (alpha ** 2) * np.dot(vpg_grad.T, npg_grad)
+            n_step_size = (alpha ** 2) * vpg_grad.dot(npg_grad)
         else:
             n_step_size = self.n_step_size
-            alpha = np.sqrt(np.abs(self.n_step_size / (np.dot(vpg_grad.T, npg_grad) + 1e-20)))
+            inner_prod = vpg_grad.dot(npg_grad)
+            alpha = torch.sqrt(torch.abs(self.n_step_size / (inner_prod + 1e-10)))
+            alpha = alpha.to('cpu').data.numpy().ravel()[0]
 
         # Policy update
         # --------------------------
         curr_params = self.policy.get_param_values()
         new_params = curr_params + alpha * npg_grad
-        self.policy.set_param_values(new_params, set_new=True, set_old=False)
-        surr_after = self.CPI_surrogate(observations, actions, advantages).data.numpy().ravel()[0]
-        kl_dist = self.kl_old_new(observations, actions).data.numpy().ravel()[0]
-        self.policy.set_param_values(new_params, set_new=True, set_old=True)
+        self.policy.set_param_values(new_params.clone())
+        pg_surr = self.pg_surrogate(observations, actions, advantages)
+        surr_after = pg_surr.to('cpu').data.numpy().ravel()[0]
+        kl_divergence = self.kl_old_new(observations, old_mean, old_log_std)
 
         # Log information
         if self.save_logs:
@@ -147,7 +154,7 @@ class NPG(BatchREINFORCE):
             self.logger.log_kv('delta', n_step_size)
             self.logger.log_kv('time_vpg', t_gLL)
             self.logger.log_kv('time_npg', t_FIM)
-            self.logger.log_kv('kl_dist', kl_dist)
+            self.logger.log_kv('kl_dist', kl_divergence)
             self.logger.log_kv('surr_improvement', surr_after - surr_before)
             self.logger.log_kv('running_score', self.running_score)
             try:

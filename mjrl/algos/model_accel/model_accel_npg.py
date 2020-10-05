@@ -47,6 +47,8 @@ class ModelAccelNPG(NPG):
             model.to(device)
         try:    self.baseline.model.to(device)
         except: pass
+        try:    self.policy.to(device)
+        except: pass
 
     def is_cuda(self):
         # Check if any of the networks are on GPU
@@ -102,6 +104,9 @@ class ModelAccelNPG(NPG):
         assert type(init_states) == list
         assert len(init_states) == N
 
+        # set policy device to be same as learned model
+        self.policy.to(self.learned_model[0].device)
+
         for model in self.learned_model:
             # dont set seed explicitly -- this will make rollouts follow tne global seed
             rollouts = policy_rollout(num_traj=N, env=env, policy=self.policy,
@@ -115,20 +120,19 @@ class ModelAccelNPG(NPG):
             num_traj, horizon, state_dim = rollouts['observations'].shape
             for i in range(num_traj):
                 path = dict()
-                obs = rollouts['observations'][i, :, :]
-                act = rollouts['actions'][i, :, :]
-                rew = rollouts['rewards'][i, :]
-                path['observations'] = obs
-                path['actions'] = act
-                path['rewards'] = rew
-                path['terminated'] = False
+                for key in rollouts.keys():
+                    path[key] = rollouts[key][i, ...]
                 paths.append(path)
 
         # NOTE: If tasks have termination condition, we will assume that the env has
         # a function that can terminate paths appropriately.
         # Otherwise, termination is not considered.
 
-        if callable(termination_function): paths = termination_function(paths)
+        if callable(termination_function): 
+            paths = termination_function(paths)
+        else:
+            # mark unterminated
+            for path in paths: path['terminated'] = False
 
         # remove paths that are too short
         paths = [path for path in paths if path['observations'].shape[0] >= 5]

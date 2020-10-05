@@ -51,6 +51,7 @@ class Reacher7DOFEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         obs = paths["observations"]
         rewards = self.get_reward(obs)
         paths["rewards"] = rewards if rewards.shape[0] > 1 else rewards.ravel()
+        return paths
 
     # --------------------------------
     # resets and randomization

@@ -133,7 +133,8 @@ for outer_iter in range(job_data['num_iter']):
     ts = timer.time()
     print("================> ITERATION : %i " % outer_iter)
     print("Getting interaction data from real dynamics ...")
-
+    # set the policy device back to CPU for env sampling
+    agent.policy.to('cpu')
     samples_to_collect = job_data['init_samples'] if outer_iter == 0 else job_data['iter_samples']
     iter_paths = sampler.sample_data_batch(samples_to_collect, agent.env, 
                     agent.policy, eval_mode=False, base_seed=SEED + outer_iter, num_cpu=job_data['num_cpu'])
@@ -225,6 +226,8 @@ for outer_iter in range(job_data['num_iter']):
 
     if job_data['eval_rollouts'] > 0:
         print("Performing validation rollouts ... ")
+        # set the policy device back to CPU for env sampling
+        agent.policy.to('cpu')
         eval_paths = evaluate_policy(agent.env, agent.policy, agent.learned_model[0], noise_level=0.0,
                                      real_step=True, num_episodes=job_data['eval_rollouts'], visualize=False)
         eval_score = np.mean([np.sum(p['rewards']) for p in eval_paths])

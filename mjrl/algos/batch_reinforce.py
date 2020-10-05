@@ -8,23 +8,20 @@ logging.disable(logging.CRITICAL)
 import numpy as np
 import time as timer
 import torch
-from torch.autograd import Variable
-
-# samplers
-import mjrl.samplers.core as trajectory_sampler
-
-# utility functions
+import mjrl.samplers.core as sampler
 import mjrl.utils.process_samples as process_samples
+from torch.autograd import Variable
 from mjrl.utils.logger import DataLog
 
 
 class BatchREINFORCE:
     def __init__(self, env, policy, baseline,
-                 learn_rate=0.01,
+                 learn_rate=0.1,
                  seed=123,
                  desired_kl=None,
                  save_logs=False,
-                 **kwargs
+                 device='cpu',
+                 *args, **kwargs
                  ):
 
         self.env = env
@@ -35,27 +32,29 @@ class BatchREINFORCE:
         self.save_logs = save_logs
         self.running_score = None
         self.desired_kl = desired_kl
+        self.device = device
         if save_logs: self.logger = DataLog()
 
-    def CPI_surrogate(self, observations, actions, advantages):
+    def pg_surrogate(self, observations, actions, advantages):
+        # grad of the surrogate is equal to the REINFORCE gradient
+        # need to perform ascent on this objective function
         adv_var = Variable(torch.from_numpy(advantages).float(), requires_grad=False)
-        old_dist_info = self.policy.old_dist_info(observations, actions)
-        new_dist_info = self.policy.new_dist_info(observations, actions)
-        LR = self.policy.likelihood_ratio(new_dist_info, old_dist_info)
-        surr = torch.mean(LR*adv_var)
+        mean, LL = self.policy.mean_LL(observations, actions)
+        adv_var = adv_var.to(LL.device)
+        surr = torch.mean(LL*adv_var)
         return surr
 
-    def kl_old_new(self, observations, actions):
-        old_dist_info = self.policy.old_dist_info(observations, actions)
-        new_dist_info = self.policy.new_dist_info(observations, actions)
-        mean_kl = self.policy.mean_kl(new_dist_info, old_dist_info)
-        return mean_kl
+    def kl_old_new(self, observations, old_mean, old_log_std, *args, **kwargs):
+        new_mean = self.policy.forward(observations)
+        new_log_std = self.policy.log_std
+        kl_divergence = self.policy.kl_divergence(new_mean, old_mean, new_log_std,
+                                                  old_log_std, *args, **kwargs)
+        return kl_divergence.to('cpu').data.numpy().ravel()[0]
 
     def flat_vpg(self, observations, actions, advantages):
-        cpi_surr = self.CPI_surrogate(observations, actions, advantages)
-        vpg_grad = torch.autograd.grad(cpi_surr, self.policy.trainable_params)
-        vpg_grad = np.concatenate([g.contiguous().view(-1).data.numpy() for g in vpg_grad])
-        return vpg_grad
+        pg_surr = self.pg_surrogate(observations, actions, advantages)
+        vpg_grad = torch.autograd.grad(pg_surr, self.policy.trainable_params)
+        return torch.cat([g.contiguous().view(-1) for g in vpg_grad])
 
     # ----------------------------------------------------------
     def train_step(self, N,
@@ -69,21 +68,21 @@ class BatchREINFORCE:
                    ):
 
         # Clean up input arguments
-        env = self.env.env_id if env is None else env
+        env = self.env if env is None else env
         if sample_mode != 'trajectories' and sample_mode != 'samples':
             print("sample_mode in NPG must be either 'trajectories' or 'samples'")
             quit()
 
         ts = timer.time()
-
+        self.policy.to('cpu')
         if sample_mode == 'trajectories':
             input_dict = dict(num_traj=N, env=env, policy=self.policy, horizon=horizon,
                               base_seed=self.seed, num_cpu=num_cpu, env_kwargs=env_kwargs)
-            paths = trajectory_sampler.sample_paths(**input_dict)
+            paths = sampler.sample_paths(**input_dict)
         elif sample_mode == 'samples':
             input_dict = dict(num_samples=N, env=env, policy=self.policy, horizon=horizon,
                               base_seed=self.seed, num_cpu=num_cpu, env_kwargs=env_kwargs)
-            paths = trajectory_sampler.sample_data_batch(**input_dict)
+            paths = sampler.sample_data_batch(**input_dict)
 
         if self.save_logs:
             self.logger.log_kv('time_sampling', timer.time() - ts)
@@ -95,6 +94,7 @@ class BatchREINFORCE:
         # compute advantages
         process_samples.compute_advantages(paths, self.baseline, gamma, gae_lambda)
         # train from paths
+        self.policy.to(self.device)
         eval_statistics = self.train_from_paths(paths)
         eval_statistics.append(N)
         # log number of samples
@@ -124,11 +124,15 @@ class BatchREINFORCE:
 
         # Optimization algorithm
         # --------------------------
-        surr_before = self.CPI_surrogate(observations, actions, advantages).data.numpy().ravel()[0]
+        pg_surr = self.pg_surrogate(observations, actions, advantages)
+        surr_before = pg_surr.to('cpu').data.numpy().ravel()[0]
+        old_mean = self.policy.forward(observations).detach().clone()
+        old_log_std = self.policy.log_std.detach().clone()
 
         # VPG
         ts = timer.time()
         vpg_grad = self.flat_vpg(observations, actions, advantages)
+        print(vpg_grad.device)
         t_gLL += timer.time() - ts
 
         # Policy update with linesearch
@@ -139,9 +143,9 @@ class BatchREINFORCE:
             curr_params = self.policy.get_param_values()
             for ctr in range(max_ctr):
                 new_params = curr_params + alpha * vpg_grad
-                self.policy.set_param_values(new_params, set_new=True, set_old=False)
-                kl_dist = self.kl_old_new(observations, actions).data.numpy().ravel()[0]
-                if kl_dist <= self.desired_kl:
+                self.policy.set_param_values(new_params.clone())
+                kl_divergence = self.kl_old_new(observations, old_mean, old_log_std)
+                if kl_divergence <= self.desired_kl:
                     break
                 else:
                     print("backtracking")
@@ -150,16 +154,16 @@ class BatchREINFORCE:
             curr_params = self.policy.get_param_values()
             new_params = curr_params + self.alpha * vpg_grad
 
-        self.policy.set_param_values(new_params, set_new=True, set_old=False)
-        surr_after = self.CPI_surrogate(observations, actions, advantages).data.numpy().ravel()[0]
-        kl_dist = self.kl_old_new(observations, actions).data.numpy().ravel()[0]
-        self.policy.set_param_values(new_params, set_new=True, set_old=True)
+        self.policy.set_param_values(new_params.clone())
+        pg_surr = self.pg_surrogate(observations, actions, advantages)
+        surr_after = pg_surr.to('cpu').data.numpy().ravel()[0]
+        kl_divergence = self.kl_old_new(observations, old_mean, old_log_std)
 
         # Log information
         if self.save_logs:
             self.logger.log_kv('alpha', self.alpha)
             self.logger.log_kv('time_vpg', t_gLL)
-            self.logger.log_kv('kl_dist', kl_dist)
+            self.logger.log_kv('kl_dist', kl_divergence)
             self.logger.log_kv('surr_improvement', surr_after - surr_before)
             self.logger.log_kv('running_score', self.running_score)
             try:

@@ -67,10 +67,11 @@ def policy_rollout(
     horizon = min(horizon, env.horizon)
     obs = []
     act = []
+    st = st.to(policy.device)
     for t in range(horizon):
-        at = policy.model.forward(st)
+        at = policy.forward(st)
         if eval_mode is not True:
-            at = at + torch.randn(at.shape) * torch.exp(policy.log_std)
+            at = at + torch.randn(at.shape).to(policy.device) * torch.exp(policy.log_std)
         # clamp states and actions to avoid blowup
         at = enforce_tensor_bounds(at, a_min, a_max, large_value)
         stp1 = learned_model.forward(st, at)
