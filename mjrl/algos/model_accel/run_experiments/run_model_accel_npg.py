@@ -186,8 +186,6 @@ for outer_iter in range(job_data['num_iter']):
         logger.log_kv('dyn_loss_gen_' + str(i), loss_general)
 
     t_model = timer.time()
-    logger.log_kv('dyn_loss_' + str(i), dynamics_loss[-1])
-    logger.log_kv('dyn_loss_gen_' + str(i), loss_general)
     logger.log_kv('model_update_time', t_model-t_sample)
 
     # =================================
