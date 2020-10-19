@@ -29,7 +29,7 @@ def policy_rollout(
         a_max=None,
         large_value=float(1e2),
         ):
-    
+
     # Only CPU rollouts are currently supported.
     # TODO(Aravind) : Extend GPU support
 
@@ -245,8 +245,8 @@ def evaluate_policy(e, policy, learned_model, noise_level=0.0,
         env_infos = []
         t = 0
         done = False
+        o = e.get_obs()
         while t < e.horizon and done is False:
-            o = e.get_obs()
             ifo = e.get_env_infos()
             a = policy.get_action(o)
             if type(a) == list:
@@ -254,9 +254,9 @@ def evaluate_policy(e, policy, learned_model, noise_level=0.0,
             if noise_level > 0.0:
                 a = a + e.env.env.np_random.uniform(low=-noise_level, high=noise_level, size=a.shape[0])
             if real_step is False:
-                next_s = learned_model.predict(o, a)
+                next_o = learned_model.predict(o, a)
                 r = 0.0 # temporarily
-                e.env.env.set_fitted_state(next_s)
+                e.env.env.set_fitted_state(next_o)
             else:
                 next_o, r, done, ifo2 = e.step(a)
                 ifo = ifo2 if ifo == {} else ifo
@@ -268,6 +268,7 @@ def evaluate_policy(e, policy, learned_model, noise_level=0.0,
             actions.append(a)
             rewards.append(r)
             env_infos.append(ifo)
+            o = next_o
 
         path = dict(observations=np.array(observations), actions=np.array(actions),
                     rewards=np.array(rewards),
@@ -284,7 +285,7 @@ def evaluate_policy(e, policy, learned_model, noise_level=0.0,
     return paths
 
 
-def enforce_tensor_bounds(torch_tensor, min_val=None, max_val=None, 
+def enforce_tensor_bounds(torch_tensor, min_val=None, max_val=None,
                           large_value=float(1e4), device=None):
     """
         Clamp the torch_tensor to Box[min_val, max_val]
@@ -299,17 +300,17 @@ def enforce_tensor_bounds(torch_tensor, min_val=None, max_val=None,
 
     assert type(min_val) == float or type(min_val) == torch.Tensor
     assert type(max_val) == float or type(max_val) == torch.Tensor
-    
+
     if type(min_val) == torch.Tensor:
         if len(min_val.shape) > 0: assert min_val.shape[-1] == torch_tensor.shape[-1]
     else:
         min_val = torch.tensor(min_val)
-    
+
     if type(max_val) == torch.Tensor:
         if len(max_val.shape) > 0: assert max_val.shape[-1] == torch_tensor.shape[-1]
     else:
         max_val = torch.tensor(max_val)
-    
+
     min_val = min_val.to(device)
     max_val = max_val.to(device)
 
