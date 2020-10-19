@@ -110,16 +110,16 @@ if 'termination_function' not in globals():
     termination_function = getattr(e.env.env, "truncate_paths", None)
 if 'obs_mask' in globals(): e.obs_mask = obs_mask
 
-models = [WorldModel(state_dim=e.observation_dim, act_dim=e.action_dim, seed=SEED+i, 
+models = [WorldModel(state_dim=e.observation_dim, act_dim=e.action_dim, seed=SEED+i,
                      **job_data) for i in range(job_data['num_models'])]
-policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'], 
+policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'],
                 init_log_std=job_data['init_log_std'], min_log_std=job_data['min_log_std'])
 if 'init_policy' in job_data.keys():
     if job_data['init_policy'] != None: policy = pickle.load(open(job_data['init_policy'], 'rb'))
 baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=256, epochs=1,  learn_rate=1e-3,
-                       use_gpu=(True if job_data['device'] == 'cuda' else False))               
+                       use_gpu=(True if job_data['device'] == 'cuda' else False))
 agent = ModelAccelNPG(learned_model=models, env=e, policy=policy, baseline=baseline, seed=SEED,
-                      normalized_step_size=job_data['step_size'], save_logs=True, 
+                      normalized_step_size=job_data['step_size'], save_logs=True,
                       reward_function=reward_function, termination_function=termination_function,
                       **job_data['npg_hp'])
 
@@ -130,13 +130,16 @@ best_policy = copy.deepcopy(policy)
 
 for outer_iter in range(job_data['num_iter']):
 
-    ts = timer.time()
+    # =================================
+    # Sample data from true dynamics
+    # =================================
+    t_start = timer.time()
     print("================> ITERATION : %i " % outer_iter)
     print("Getting interaction data from real dynamics ...")
     # set the policy device back to CPU for env sampling
     agent.policy.to('cpu')
     samples_to_collect = job_data['init_samples'] if outer_iter == 0 else job_data['iter_samples']
-    iter_paths = sampler.sample_data_batch(samples_to_collect, agent.env, 
+    iter_paths = sampler.sample_data_batch(samples_to_collect, agent.env,
                     agent.policy, eval_mode=False, base_seed=SEED + outer_iter, num_cpu=job_data['num_cpu'])
     for p in iter_paths:
         paths.append(p)
@@ -161,41 +164,62 @@ for outer_iter in range(job_data['num_iter']):
     except:
         pass
 
-    t1 = timer.time()
-    logger.log_kv('data_collect_time', t1-ts)
+    t_sample = timer.time()
+    logger.log_kv('data_collect_time', t_sample-t_start)
     print("Data gathered, fitting model ...")
+
+    # =================================
+    # Model updates
+    # =================================
     if job_data['refresh_fit']:
         models = [WorldModel(state_dim=e.observation_dim, act_dim=e.action_dim, seed=SEED+123*outer_iter,
                              **job_data) for i in range(job_data['num_models'])]
 
     for i, model in enumerate(models):
-        loss_general = model.compute_loss(s[-samples_to_collect:], 
+        loss_general = model.compute_loss(s[-samples_to_collect:],
                        a[-samples_to_collect:], sp[-samples_to_collect:]) # generalization error
         dynamics_loss = model.fit_dynamics(s, a, sp, **job_data)
+        n_substep = len(dynamics_loss)
+        for i_substep in range(job_data['fit_epochs']):
+            logger.log_kv('dyn_loss_{}.{}'.format(i, i_substep), dynamics_loss[i_substep] if i_substep<n_substep else np.nan)
         logger.log_kv('dyn_loss_' + str(i), dynamics_loss[-1])
         logger.log_kv('dyn_loss_gen_' + str(i), loss_general)
-        if job_data['learn_reward']:
-            reward_loss = model.fit_reward(s, a, r.reshape(-1, 1), **job_data)
-            logger.log_kv('rew_loss_' + str(i), reward_loss[-1])
-    t2 = timer.time()
-    logger.log_kv('model_update_time', t2-t1)
-    
+
+    t_model = timer.time()
+    logger.log_kv('dyn_loss_' + str(i), dynamics_loss[-1])
+    logger.log_kv('dyn_loss_gen_' + str(i), loss_general)
+    logger.log_kv('model_update_time', t_model-t_sample)
 
     # =================================
-    # Refresh policy if necessary
+    # Rewards updates
     # =================================
+
+    if job_data['learn_reward']:
+        for i, model in enumerate(models):
+            reward_loss = model.fit_reward(s, a, r.reshape(-1, 1), **job_data)
+            n_substep = len(reward_loss)
+            for i_substep in range(job_data['fit_epochs']):
+                logger.log_kv('rew_loss_{}.{}'.format(i, i_substep), reward_loss[i_substep] if i_substep<n_substep else np.nan)
+            logger.log_kv('rew_loss_' + str(i), reward_loss[-1])
+    t_rewards = timer.time()
+    logger.log_kv('reward_update_time', t_rewards-t_model)
+
+
+    # =================================
+    # Policy updates
+    # =================================
+
+    # Refresh policy if necessary -----
     if 'refresh_policy' in job_data.keys():
         # start policy optimization from scratch (note that data has already been collected with an improved policy)
         if job_data['refresh_policy']:
-            policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'], 
+            policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'],
                 init_log_std=job_data['init_log_std'], min_log_std=job_data['min_log_std'])
             agent.policy = policy
         else:
             pass
 
-    # =================================
-    # NPG updates
-    # =================================
+    # NPG udpates ---------------------
     agent.learned_model = models
     for inner_step in range(job_data['inner_steps']):
         if job_data['start_state'] == 'init':
@@ -216,13 +240,17 @@ for outer_iter in range(job_data['num_iter']):
             init_states_2 = list(s[buffer_rand_idx])
             init_states = init_states_1 + init_states_2
 
-        agent.train_step(N=len(init_states), init_states=init_states, horizon=job_data['horizon'])
+        statistics = agent.train_step(N=len(init_states), init_states=init_states, horizon=job_data['horizon'])
         print_data = sorted(filter(lambda v: np.asarray(v[1]).size == 1,
                                    agent.logger.get_current_log().items()))
         print(tabulate(print_data))
+        logger.log_kv("rollout_score_mean_0.{}".format(inner_step), statistics[0])
+        logger.log_kv("rollout_score_std_0.{}".format(inner_step), statistics[1])
+        logger.log_kv("rollout_score_min_0.{}".format(inner_step), statistics[2])
+        logger.log_kv("rollout_score_max_0.{}".format(inner_step), statistics[3])
 
-    t3 = timer.time()
-    logger.log_kv('policy_update_time', t3-t2)
+    t_policy = timer.time()
+    logger.log_kv('policy_update_time', t_policy-t_rewards)
 
     if job_data['eval_rollouts'] > 0:
         print("Performing validation rollouts ... ")
@@ -233,7 +261,7 @@ for outer_iter in range(job_data['num_iter']):
         eval_score = np.mean([np.sum(p['rewards']) for p in eval_paths])
         logger.log_kv('eval_score', eval_score)
         try:
-            eval_metric = e.env.env.evaluate_success(eval_paths)
+            eval_metric = e.env.env.evaluate_success(eval_paths, logger)
             logger.log_kv('eval_metric', eval_metric)
         except:
             pass
@@ -255,9 +283,9 @@ for outer_iter in range(job_data['num_iter']):
         pickle.dump(best_policy, open(OUT_DIR + '/iterations/best_policy.pickle', 'wb'))
         agent.to(job_data['device'])
 
-    tf = timer.time()
-    logger.log_kv('eval_log_time', tf-t3)
-    logger.log_kv('iter_time', tf-ts)
+    t_final = timer.time()
+    logger.log_kv('eval_log_time', t_final-t_policy)
+    logger.log_kv('iter_time', t_final-t_start)
     print_data = sorted(filter(lambda v: np.asarray(v[1]).size == 1,
                                logger.get_current_log().items()))
     print(tabulate(print_data))
