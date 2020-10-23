@@ -9,6 +9,7 @@ import time as timer
 import torch
 from torch.autograd import Variable
 from mjrl.utils.logger import DataLog
+from mjrl.utils.tensor_utils import tensorize
 from tqdm import tqdm
 
 
@@ -31,6 +32,7 @@ class BC:
         self.logger = DataLog()
         self.loss_type = loss_type
         self.save_logs = save_logs
+        assert (self.loss_type == 'MSE' or self.loss_type == 'MLE')
 
         if set_transforms:
             in_shift, in_scale, out_shift, out_scale = self.compute_transformations()
@@ -61,13 +63,13 @@ class BC:
 
     def set_transformations(self, in_shift=None, in_scale=None, out_shift=None, out_scale=None):
         # set scalings in the target policy
-        self.policy.model.set_transformations(in_shift, in_scale, out_shift, out_scale)
-        self.policy.old_model.set_transformations(in_shift, in_scale, out_shift, out_scale)
+        self.policy.set_transformations(in_shift, in_scale, out_shift, out_scale)
 
     def set_variance_with_data(self, out_scale):
         # set the variance of gaussian policy based on out_scale
+        out_scale = tensorize(out_scale, device=self.policy.device)
         params = self.policy.get_param_values()
-        params[-self.policy.m:] = np.log(out_scale + 1e-12)
+        params[-self.policy.action_dim:] = torch.log(out_scale + 1e-3)
         self.policy.set_param_values(params)
 
     def loss(self, data, idx=None):
@@ -87,7 +89,7 @@ class BC:
             idx = torch.LongTensor(idx)
         obs = data['observations'][idx]
         act = data['expert_actions'][idx]
-        LL, mu, log_std = self.policy.new_dist_info(obs, act)
+        mu, LL = self.policy.mean_LL(obs, act)
         # minimize negative log likelihood
         return -torch.mean(LL)
 
@@ -97,10 +99,8 @@ class BC:
             idx = torch.LongTensor(idx)
         obs = data['observations'][idx]
         act_expert = data['expert_actions'][idx]
-        if type(data['observations']) is not torch.Tensor:
-            obs = Variable(torch.from_numpy(obs).float(), requires_grad=False)
-            act_expert = Variable(torch.from_numpy(act_expert).float(), requires_grad=False)
-        act_pi = self.policy.model(obs)
+        act_expert = tensorize(act_expert, device=self.policy.device)
+        act_pi = self.policy.forward(obs)
         return self.loss_criterion(act_pi, act_expert.detach())
 
     def fit(self, data, suppress_fit_tqdm=False, **kwargs):
@@ -137,6 +137,8 @@ class BC:
     def train(self, **kwargs):
         observations = np.concatenate([path["observations"] for path in self.expert_paths])
         expert_actions = np.concatenate([path["actions"] for path in self.expert_paths])
+        observations = tensorize(observations, device=self.policy.device)
+        expert_actions = tensorize(expert_actions, self.policy.device)
         data = dict(observations=observations, expert_actions=expert_actions)
         self.fit(data, **kwargs)
 

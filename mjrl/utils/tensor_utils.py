@@ -1,6 +1,7 @@
 import operator
 
 import numpy as np
+import torch
 
 
 def flatten_tensors(tensors):
@@ -148,3 +149,15 @@ def truncate_tensor_dict(tensor_dict, truncated_len):
         else:
             ret[k] = truncate_tensor_list(v, truncated_len)
     return ret
+
+
+def tensorize(var, device='cpu'):
+    if type(var) == torch.Tensor:
+        return var.to(device)
+    elif type(var) == np.ndarray:
+        return torch.from_numpy(var).float().to(device)
+    elif type(var) == float:
+        return torch.tensor(var).float()
+    else:
+        print("Variable type not compatible with function.")
+        return None
