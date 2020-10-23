@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from mjrl.utils.fc_network import FCNetwork
+from mjrl.utils.tensor_utils import tensorize
 from torch.autograd import Variable
 
 class MLP(torch.nn.Module):
@@ -52,6 +52,9 @@ class MLP(torch.nn.Module):
            param.data = 1e-2 * param.data
         self.log_std = torch.nn.Parameter(torch.ones(self.action_dim) * init_log_std, requires_grad=True)
         self.trainable_params = list(self.parameters())
+        # transform variables
+        self.in_shift, self.in_scale = torch.zeros(self.observation_dim), torch.ones(self.observation_dim)
+        self.out_shift, self.out_scale = torch.zeros(self.action_dim), torch.ones(self.action_dim)
 
         # Easy access variables
         # -------------------------
@@ -75,11 +78,11 @@ class MLP(torch.nn.Module):
         if type(observations) == np.ndarray: observations = torch.from_numpy(observations).float()
         assert type(observations) == torch.Tensor
         observations = observations.to(self.device)
-        out = observations
+        out = (observations - self.in_shift) / (self.in_scale + 1e-6)
         for i in range(len(self.fc_layers)-1):
             out = self.fc_layers[i](out)
             out = self.nonlinearity(out)
-        out = self.fc_layers[-1](out)
+        out = self.fc_layers[-1](out) * self.out_scale + self.out_shift
         return out
 
 
@@ -88,6 +91,8 @@ class MLP(torch.nn.Module):
     def to(self, device):
         super().to(device)
         self.min_log_std = self.min_log_std.to(device)
+        self.in_shift, self.in_scale = self.in_shift.to(device), self.in_scale.to(device)
+        self.out_shift, self.out_scale = self.out_shift.to(device), self.out_scale.to(device)
         self.trainable_params = list(self.parameters())
         self.device = device
 
@@ -107,6 +112,15 @@ class MLP(torch.nn.Module):
         # update log_std_val for sampling
         self.log_std_val = np.float64(self.log_std.to('cpu').data.numpy().ravel())
         self.trainable_params = list(self.parameters())
+
+    def set_transformations(self, in_shift=None, in_scale=None, 
+                            out_shift=None, out_scale=None, *args, **kwargs):
+        in_shift = torch.zeros(self.observation_dim) if in_shift is None else tensorize(in_shift)
+        in_scale = torch.ones(self.observation_dim) if in_scale is None else tensorize(in_scale)
+        out_shift = torch.zeros(self.action_dim) if out_shift is None else tensorize(out_shift)
+        out_scale = torch.ones(self.action_dim) if out_scale is None else tensorize(out_scale)
+        self.in_shift, self.in_scale = in_shift.to(self.device), in_scale.to(self.device)
+        self.out_shift, self.out_scale = out_shift.to(self.device), out_scale.to(self.device)
 
 
     # Main functions

@@ -141,22 +141,26 @@ class ModelAccelNPG(NPG):
         if truncate_lim is not None and len(self.learned_model) > 1:
             for path in paths:
                 pred_err = np.zeros(path['observations'].shape[0] - 1)
-                for model in self.learned_model:
-                    s = path['observations'][:-1]
-                    a = path['actions'][:-1]
-                    s_next = path['observations'][1:]
-                    pred = model.predict(s, a)
-                    model_err = np.mean((s_next - pred)**2, axis=-1)
-                    pred_err = np.maximum(pred_err, model_err)
+                s = path['observations'][:-1]
+                a = path['actions'][:-1]
+                s_next = path['observations'][1:]
+                for idx_1, model_1 in enumerate(self.learned_model):
+                    pred_1 = model_1.predict(s, a)
+                    for idx_2, model_2 in enumerate(self.learned_model):
+                        if idx_2 > idx_1:
+                            pred_2 = model_2.predict(s, a)
+                            # model_err = np.mean((pred_1 - pred_2)**2, axis=-1)
+                            model_err = np.linalg.norm((pred_1-pred_2), axis=-1)
+                            pred_err = np.maximum(pred_err, model_err)
                 violations = np.where(pred_err > truncate_lim)[0]
                 truncated = (not len(violations) == 0)
-                T = violations[0] + 1 if truncated else obs.shape[0]
+                T = violations[0] + 1 if truncated else path['observations'].shape[0]
                 T = max(4, T)   # we don't want corner cases of very short truncation
                 path["observations"] = path["observations"][:T]
                 path["actions"] = path["actions"][:T]
                 path["rewards"] = path["rewards"][:T]
                 if truncated: path["rewards"][-1] += truncate_reward
-                path["terminated"] = False if T == obs.shape[0] else True
+                path["terminated"] = False if T == path['observations'].shape[0] else True
 
         if self.save_logs:
             self.logger.log_kv('time_sampling', timer.time() - ts)

@@ -117,7 +117,7 @@ policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'],
 if 'init_policy' in job_data.keys():
     if job_data['init_policy'] != None: policy = pickle.load(open(job_data['init_policy'], 'rb'))
 baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=256, epochs=1,  learn_rate=1e-3,
-                       use_gpu=(True if job_data['device'] == 'cuda' else False))               
+                       device=job_data['device'])               
 agent = ModelAccelNPG(learned_model=models, env=e, policy=policy, baseline=baseline, seed=SEED,
                       normalized_step_size=job_data['step_size'], save_logs=True, 
                       reward_function=reward_function, termination_function=termination_function,
@@ -180,7 +180,6 @@ for outer_iter in range(job_data['num_iter']):
     t2 = timer.time()
     logger.log_kv('model_update_time', t2-t1)
     
-
     # =================================
     # Refresh policy if necessary
     # =================================

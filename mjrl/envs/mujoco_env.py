@@ -151,12 +151,14 @@ class MujocoEnv(gym.Env):
 
     def visualize_policy(self, policy, horizon=1000, num_episodes=1, mode='exploration'):
         self.mujoco_render_frames = True
+        obs_func = getattr(self, 'get_obs', '_get_obs')
         for ep in range(num_episodes):
             o = self.reset()
             d = False
             t = 0
             score = 0.0
             while t < horizon and d is False:
+                o = obs_func()
                 a = policy.get_action(o)[0] if mode == 'exploration' else policy.get_action(o)[1]['evaluation']
                 o, r, d, _ = self.step(a)
                 t = t+1

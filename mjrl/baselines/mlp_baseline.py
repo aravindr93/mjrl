@@ -4,17 +4,18 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from mjrl.utils.optimize_model import fit_data
+from mjrl.utils.tensor_utils import tensorize
 
 import pickle
 
 class MLPBaseline:
     def __init__(self, env_spec, inp_dim=None, inp='obs', learn_rate=1e-3, reg_coef=0.0,
-                 batch_size=64, epochs=1, use_gpu=False, hidden_sizes=(128, 128)):
+                 batch_size=64, epochs=1, device='cpu', hidden_sizes=(128, 128)):
         self.n = inp_dim if inp_dim is not None else env_spec.observation_dim
         self.batch_size = batch_size
         self.epochs = epochs
         self.reg_coef = reg_coef
-        self.use_gpu = use_gpu
+        self.device = device
         self.inp = inp
         self.hidden_sizes = hidden_sizes
 
@@ -27,8 +28,7 @@ class MLPBaseline:
             if i != len(layer_sizes) - 2:
                 self.model.add_module(relu_id, nn.ReLU())
 
-        if self.use_gpu:
-            self.model.cuda()
+        self.model = self.model.to(self.device)
 
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learn_rate, weight_decay=reg_coef)
         self.loss_function = torch.nn.MSELoss()
@@ -67,18 +67,11 @@ class MLPBaseline:
         num_samples = returns.shape[0]
 
         # Make variables with the above data
-        if self.use_gpu:
-            featmat_var = Variable(torch.from_numpy(featmat).cuda(), requires_grad=False)
-            returns_var = Variable(torch.from_numpy(returns).cuda(), requires_grad=False)
-        else:
-            featmat_var = Variable(torch.from_numpy(featmat), requires_grad=False)
-            returns_var = Variable(torch.from_numpy(returns), requires_grad=False)
+        featmat_var = tensorize(featmat, device=self.device)
+        returns_var = tensorize(returns, device=self.device)
 
         if return_errors:
-            if self.use_gpu:
-                predictions = self.model(featmat_var).cpu().data.numpy().ravel()
-            else:
-                predictions = self.model(featmat_var).data.numpy().ravel()
+            predictions = self.model(featmat_var).to('cpu').data.numpy().ravel()
             errors = returns.ravel() - predictions
             error_before = np.sum(errors**2)/(np.sum(returns**2) + 1e-8)
 
@@ -86,20 +79,13 @@ class MLPBaseline:
                                 self.loss_function, self.batch_size, self.epochs)
 
         if return_errors:
-            if self.use_gpu:
-                predictions = self.model(featmat_var).cpu().data.numpy().ravel()
-            else:
-                predictions = self.model(featmat_var).data.numpy().ravel()
+            predictions = self.model(featmat_var).to('cpu').data.numpy().ravel()
             errors = returns.ravel() - predictions
             error_after = np.sum(errors**2)/(np.sum(returns**2) + 1e-8)
             return error_before, error_after
 
     def predict(self, path):
         featmat = self._features([path]).astype('float32')
-        if self.use_gpu:
-            feat_var = Variable(torch.from_numpy(featmat).float().cuda(), requires_grad=False)
-            prediction = self.model(feat_var).cpu().data.numpy().ravel()
-        else:
-            feat_var = Variable(torch.from_numpy(featmat).float(), requires_grad=False)
-            prediction = self.model(feat_var).data.numpy().ravel()
+        featmat_var = tensorize(featmat, device=self.device)
+        prediction = self.model(featmat_var).to('cpu').data.numpy().ravel()
         return prediction
