@@ -108,16 +108,16 @@ if 'reward_function' not in globals():
     job_data['learn_reward'] = False if reward_function is not None else True
 if 'termination_function' not in globals():
     termination_function = getattr(e.env.env, "truncate_paths", None)
-if 'obs_mask' in globals(): e.obs_mask = obs_mask
 
 models = [WorldModel(state_dim=e.observation_dim, act_dim=e.action_dim, seed=SEED+i, 
                      **job_data) for i in range(job_data['num_models'])]
 policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'], 
                 init_log_std=job_data['init_log_std'], min_log_std=job_data['min_log_std'])
+if 'obs_mask' in globals(): policy.set_transformations(in_scale=1.0/obs_mask)
 if 'init_policy' in job_data.keys():
     if job_data['init_policy'] != None: policy = pickle.load(open(job_data['init_policy'], 'rb'))
-baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=256, epochs=1,  learn_rate=1e-3,
-                       device=job_data['device'])               
+baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=128, epochs=1,  learn_rate=1e-3,
+                       device=job_data['device'])    
 agent = ModelAccelNPG(learned_model=models, env=e, policy=policy, baseline=baseline, seed=SEED,
                       normalized_step_size=job_data['step_size'], save_logs=True, 
                       reward_function=reward_function, termination_function=termination_function,

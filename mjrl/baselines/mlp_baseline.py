@@ -10,7 +10,7 @@ import pickle
 
 class MLPBaseline:
     def __init__(self, env_spec, inp_dim=None, inp='obs', learn_rate=1e-3, reg_coef=0.0,
-                 batch_size=64, epochs=1, device='cpu', hidden_sizes=(128, 128)):
+                 batch_size=64, epochs=1, device='cpu', hidden_sizes=(128, 128), *args, **kwargs):
         self.n = inp_dim if inp_dim is not None else env_spec.observation_dim
         self.batch_size = batch_size
         self.epochs = epochs

@@ -1,6 +1,5 @@
 from mjrl.utils.gym_env import GymEnv
 from mjrl.policies.gaussian_mlp import MLP
-from mjrl.policies.gaussian_linear import LinearPolicy
 from mjrl.baselines.quadratic_baseline import QuadraticBaseline
 from mjrl.baselines.mlp_baseline import MLPBaseline
 from mjrl.algos.npg_cg import NPG
@@ -25,16 +24,16 @@ train_agent(job_name='swimmer_nn_exp1',
             gae_lambda=0.97,
             num_cpu=1,
             sample_mode='trajectories',
-            num_traj=10,
+            num_traj=20,
             save_freq=5,
-            evaluation_rollouts=5)
+            evaluation_rollouts=2)
 print("time taken for NN policy training = %f" % (timer.time()-ts))
 
 
 # Linear policy
 # ==================================
 e = GymEnv('mjrl_swimmer-v0')
-policy = LinearPolicy(e.spec, seed=SEED)
+policy = MLP(e.spec, hidden_sizes=(), seed=SEED)
 baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=64, epochs=2, learn_rate=1e-3)
 agent = NPG(e, policy, baseline, normalized_step_size=0.1, seed=SEED, save_logs=True)
 
@@ -47,7 +46,7 @@ train_agent(job_name='swimmer_linear_exp1',
             gae_lambda=0.97,
             num_cpu=1,
             sample_mode='trajectories',
-            num_traj=10,
+            num_traj=20,
             save_freq=5,
-            evaluation_rollouts=5)
+            evaluation_rollouts=2)
 print("time taken for linear policy training = %f" % (timer.time()-ts))

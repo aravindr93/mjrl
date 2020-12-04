@@ -12,6 +12,7 @@ class MLP(torch.nn.Module):
                  device='cpu',
                  observation_dim=None,
                  action_dim=None,
+                 *args, **kwargs,
                  ):
         """
         :param env_spec: specifications of the env (see utils/gym_env.py)
@@ -115,10 +116,10 @@ class MLP(torch.nn.Module):
 
     def set_transformations(self, in_shift=None, in_scale=None, 
                             out_shift=None, out_scale=None, *args, **kwargs):
-        in_shift = torch.zeros(self.observation_dim) if in_shift is None else tensorize(in_shift)
-        in_scale = torch.ones(self.observation_dim) if in_scale is None else tensorize(in_scale)
-        out_shift = torch.zeros(self.action_dim) if out_shift is None else tensorize(out_shift)
-        out_scale = torch.ones(self.action_dim) if out_scale is None else tensorize(out_scale)
+        in_shift = self.in_shift if in_shift is None else tensorize(in_shift)
+        in_scale = self.in_scale if in_scale is None else tensorize(in_scale)
+        out_shift = self.out_shift if out_shift is None else tensorize(out_shift)
+        out_scale = self.out_scale if out_scale is None else tensorize(out_scale)
         self.in_shift, self.in_scale = in_shift.to(self.device), in_scale.to(self.device)
         self.out_shift, self.out_scale = out_shift.to(self.device), out_scale.to(self.device)
 

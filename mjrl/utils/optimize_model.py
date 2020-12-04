@@ -21,7 +21,7 @@ def fit_data(model, x, y, optimizer, loss_func, batch_size, epochs):
     for ep in range(epochs):
         rand_idx = torch.LongTensor(np.random.permutation(num_samples))
         ep_loss = 0.0
-        num_steps = int(num_samples / batch_size) - 1
+        num_steps = max(int(num_samples / batch_size) - 1, 1)
         for mb in range(num_steps):
             data_idx = rand_idx[mb*batch_size:(mb+1)*batch_size]
             batch_x = x[data_idx]

@@ -38,7 +38,6 @@ class GymEnv(object):
         except AttributeError:
             self._horizon = env.spec._horizon
 
-        assert self._horizon % act_repeat == 0
         self._horizon = self._horizon // self.act_repeat
 
         try:
