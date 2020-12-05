@@ -1,9 +1,3 @@
-from os import environ
-# Select GPU 0 only
-environ['CUDA_DEVICE_ORDER']='PCI_BUS_ID'
-environ['CUDA_VISIBLE_DEVICES']='0'
-environ['MKL_THREADING_LAYER']='GNU'
-
 import numpy as np
 import copy
 import torch

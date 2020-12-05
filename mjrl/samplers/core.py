@@ -156,7 +156,7 @@ def sample_data_batch(
         horizon = 1e6,
         base_seed = None,
         num_cpu = 1,
-        paths_per_call = 2,
+        paths_per_call = 1,
         env_kwargs=None,
         ):
 
@@ -170,7 +170,7 @@ def sample_data_batch(
     paths_so_far = 0
     paths = []
     base_seed = 123 if base_seed is None else base_seed
-    while sampled_so_far <= num_samples:
+    while sampled_so_far < num_samples:
         base_seed = base_seed + 12345
         new_paths = sample_paths(paths_per_call * num_cpu, env, policy,
                                  eval_mode, horizon, base_seed, num_cpu,

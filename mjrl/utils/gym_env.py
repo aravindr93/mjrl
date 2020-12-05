@@ -14,15 +14,32 @@ class EnvSpec(object):
 
 
 class GymEnv(object):
-    def __init__(self, env_name):
-        env = gym.make(env_name)
+    def __init__(self, env, env_kwargs=None,
+                 obs_mask=None, act_repeat=1, 
+                 *args, **kwargs):
+    
+        # get the correct env behavior
+        if type(env) == str:
+            env = gym.make(env)
+        elif isinstance(env, gym.Env):
+            env = env
+        elif callable(env):
+            env = env(**env_kwargs)
+        else:
+            print("Unsupported environment format")
+            raise AttributeError
+
         self.env = env
         self.env_id = env.spec.id
+        self.act_repeat = act_repeat
 
         try:
             self._horizon = env.spec.max_episode_steps
         except AttributeError:
             self._horizon = env.spec._horizon
+
+        assert self._horizon % act_repeat == 0
+        self._horizon = self._horizon // self.act_repeat
 
         try:
             self._action_dim = self.env.env.action_dim
@@ -36,6 +53,9 @@ class GymEnv(object):
 
         # Specs
         self.spec = EnvSpec(self._observation_dim, self._action_dim, self._horizon)
+
+        # obs mask
+        self.obs_mask = np.ones(self._observation_dim) if obs_mask is None else obs_mask
 
     @property
     def action_dim(self):
@@ -71,7 +91,16 @@ class GymEnv(object):
         return self.reset(seed)
 
     def step(self, action):
-        return self.env.step(action)
+        action = action.clip(self.action_space.low, self.action_space.high)
+        if self.act_repeat == 1: 
+            obs, cum_reward, done, ifo = self.env.step(action)
+        else:
+            cum_reward = 0.0
+            for i in range(self.act_repeat):
+                obs, reward, done, ifo = self.env.step(action)
+                cum_reward += reward
+                if done: break
+        return self.obs_mask * obs, cum_reward, done, ifo
 
     def render(self):
         try:
@@ -88,9 +117,9 @@ class GymEnv(object):
 
     def get_obs(self):
         try:
-            return self.env.env._get_obs()
+            return self.obs_mask * self.env.env.get_obs()
         except:
-            return self.env.env.get_obs()
+            return self.obs_mask * self.env.env._get_obs()
 
     def get_env_infos(self):
         try:
@@ -130,11 +159,14 @@ class GymEnv(object):
                 o = self.reset()
                 d = False
                 t = 0
+                score = 0.0
                 while t < horizon and d is False:
                     a = policy.get_action(o)[0] if mode == 'exploration' else policy.get_action(o)[1]['evaluation']
                     o, r, d, _ = self.step(a)
+                    score = score + r
                     self.render()
                     t = t+1
+                print("Episode score = %f" % score)
 
     def evaluate_policy(self, policy,
                         num_episodes=5,
