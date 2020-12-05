@@ -13,7 +13,7 @@ def read(fname):
 
 setup(
     name='mjrl',
-    version='1.0.0',
+    version='0.0.0',
     packages=find_packages(),
     description='RL algorithms for environments in MuJoCo',
     long_description=read('README.md'),
