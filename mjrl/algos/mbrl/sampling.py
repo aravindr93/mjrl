@@ -69,6 +69,8 @@ def policy_rollout(
     act = []
     st = st.to(policy.device)
     for t in range(horizon):
+        # TODO(Aravind): Below assumes gaussian policy. Instead expand the get_action function
+        # in the policy class to make this more generally applicable.
         at = policy.forward(st)
         if eval_mode is not True:
             at = at + torch.randn(at.shape).to(policy.device) * torch.exp(policy.log_std)

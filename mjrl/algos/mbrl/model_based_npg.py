@@ -8,19 +8,19 @@ import os
 import time as timer
 from torch.autograd import Variable
 from mjrl.utils.gym_env import GymEnv
-from mjrl.algos.model_accel.nn_dynamics import WorldModel
+from mjrl.algos.mbrl.nn_dynamics import WorldModel
 import mjrl.samplers.core as trajectory_sampler
 
 # utility functions
 import mjrl.utils.process_samples as process_samples
 from mjrl.utils.logger import DataLog
-from mjrl.algos.model_accel.sampling import policy_rollout
+from mjrl.algos.mbrl.sampling import policy_rollout
 
 # Import NPG
 from mjrl.algos.npg_cg import NPG
 
 
-class ModelAccelNPG(NPG):
+class ModelBasedNPG(NPG):
     def __init__(self, learned_model=None,
                  refine=False,
                  kappa=5.0,
@@ -29,7 +29,7 @@ class ModelAccelNPG(NPG):
                  reward_function=None,
                  termination_function=None,
                  **kwargs):
-        super(ModelAccelNPG, self).__init__(**kwargs)
+        super(ModelBasedNPG, self).__init__(**kwargs)
         if learned_model is None:
             print("Algorithm requires a (list of) learned dynamics model")
             quit()
@@ -117,6 +117,8 @@ class ModelAccelNPG(NPG):
                 model.compute_path_rewards(rollouts)
             else:
                rollouts = reward_function(rollouts)
+               # scale by action repeat if necessary
+               rollouts["rewards"] = rollouts["rewards"] * env.act_repeat
             num_traj, horizon, state_dim = rollouts['observations'].shape
             for i in range(num_traj):
                 path = dict()

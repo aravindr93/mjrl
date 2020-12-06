@@ -8,7 +8,7 @@
 'sample_mode'       :   'trajectories',
 'rl_num_traj'       :   10,
 'rl_num_iter'       :   50,
-'num_cpu'           :   2,
+'num_cpu'           :   1,
 'save_freq'         :   25,
 'eval_rollouts'     :   None,
 'exp_notes'         :   'Example config for training policy with NPG on the mjrl swimmer task.',

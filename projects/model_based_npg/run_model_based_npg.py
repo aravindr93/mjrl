@@ -25,9 +25,9 @@ from mjrl.baselines.quadratic_baseline import QuadraticBaseline
 from mjrl.utils.gym_env import GymEnv
 from mjrl.utils.logger import DataLog
 from mjrl.utils.make_train_plots import make_train_plots
-from mjrl.algos.model_accel.nn_dynamics import WorldModel
-from mjrl.algos.model_accel.model_accel_npg import ModelAccelNPG
-from mjrl.algos.model_accel.sampling import sample_paths, evaluate_policy
+from mjrl.algos.mbrl.nn_dynamics import WorldModel
+from mjrl.algos.mbrl.model_based_npg import ModelBasedNPG
+from mjrl.algos.mbrl.sampling import sample_paths, evaluate_policy
 
 # ===============================================================================
 # Get command line arguments
@@ -113,12 +113,12 @@ models = [WorldModel(state_dim=e.observation_dim, act_dim=e.action_dim, seed=SEE
                      **job_data) for i in range(job_data['num_models'])]
 policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'], 
                 init_log_std=job_data['init_log_std'], min_log_std=job_data['min_log_std'])
-if 'obs_mask' in globals(): policy.set_transformations(in_scale=1.0/obs_mask)
+if 'obs_mask' in globals(): e.obs_mask = obs_mask
 if 'init_policy' in job_data.keys():
     if job_data['init_policy'] != None: policy = pickle.load(open(job_data['init_policy'], 'rb'))
 baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=128, epochs=1,  learn_rate=1e-3,
                        device=job_data['device'])    
-agent = ModelAccelNPG(learned_model=models, env=e, policy=policy, baseline=baseline, seed=SEED,
+agent = ModelBasedNPG(learned_model=models, env=e, policy=policy, baseline=baseline, seed=SEED,
                       normalized_step_size=job_data['step_size'], save_logs=True, 
                       reward_function=reward_function, termination_function=termination_function,
                       **job_data['npg_hp'])
@@ -127,6 +127,7 @@ paths = []
 init_states_buffer = []
 best_perf = -1e8
 best_policy = copy.deepcopy(policy)
+logger.log_kv('act_repeat', job_data['act_repeat'])
 
 for outer_iter in range(job_data['num_iter']):
 
@@ -249,10 +250,17 @@ for outer_iter in range(job_data['num_iter']):
     if outer_iter > 0 and outer_iter % job_data['save_freq'] == 0:
         # convert to CPU before pickling
         agent.to('cpu')
+        # make observation mask part of policy for easy deployment in environment
+        old_in_scale = policy.in_scale
+        for pi in [policy, best_policy]:
+            pi.set_transformations(in_scale = 1.0 / e.obs_mask)
         pickle.dump(agent, open(OUT_DIR + '/iterations/agent_' + str(outer_iter) + '.pickle', 'wb'))
         pickle.dump(policy, open(OUT_DIR + '/iterations/policy_' + str(outer_iter) + '.pickle', 'wb'))
         pickle.dump(best_policy, open(OUT_DIR + '/iterations/best_policy.pickle', 'wb'))
         agent.to(job_data['device'])
+        for pi in [policy, best_policy]:
+            pi.set_transformations(in_scale = old_in_scale)
+
 
     tf = timer.time()
     logger.log_kv('eval_log_time', tf-t3)

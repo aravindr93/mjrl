@@ -28,7 +28,8 @@ class PPO(BatchREINFORCE):
                  learn_rate = 3e-4,
                  seed = 123,
                  save_logs = False,
-                 **kwargs
+                 device = 'cpu',
+                 *args, **kwargs,
                  ):
 
         self.env = env
@@ -40,72 +41,61 @@ class PPO(BatchREINFORCE):
         self.clip_coef = clip_coef
         self.epochs = epochs
         self.mb_size = mb_size
+        self.device = device
         self.running_score = None
         if save_logs: self.logger = DataLog()
 
         self.optimizer = torch.optim.Adam(self.policy.trainable_params, lr=learn_rate)
 
-    def PPO_surrogate(self, observations, actions, advantages):
+    def PPO_surrogate(self, observations, actions, advantages, old_LL):
         adv_var = Variable(torch.from_numpy(advantages).float(), requires_grad=False)
-        old_dist_info = self.policy.old_dist_info(observations, actions)
-        new_dist_info = self.policy.new_dist_info(observations, actions)
-        LR = self.policy.likelihood_ratio(new_dist_info, old_dist_info)
+        mean, LL = self.policy.mean_LL(observations, actions)
+        LR = torch.exp(LL - old_LL.detach())
         LR_clip = torch.clamp(LR, min=1-self.clip_coef, max=1+self.clip_coef)
+        adv_var = adv_var.to(LL.device)
         ppo_surr = torch.mean(torch.min(LR*adv_var,LR_clip*adv_var))
         return ppo_surr
 
     # ----------------------------------------------------------
     def train_from_paths(self, paths):
 
-        # Concatenate from all the trajectories
-        observations = np.concatenate([path["observations"] for path in paths])
-        actions = np.concatenate([path["actions"] for path in paths])
-        advantages = np.concatenate([path["advantages"] for path in paths])
-        # Advantage whitening
-        advantages = (advantages - np.mean(advantages)) / (np.std(advantages) + 1e-6)
-        # NOTE : advantage should be zero mean in expectation
-        # normalized step size invariant to advantage scaling,
-        # but scaling can help with least squares
-
-        # cache return distributions for the paths
-        path_returns = [sum(p["rewards"]) for p in paths]
-        mean_return = np.mean(path_returns)
-        std_return = np.std(path_returns)
-        min_return = np.amin(path_returns)
-        max_return = np.amax(path_returns)
-        base_stats = [mean_return, std_return, min_return, max_return]
-        self.running_score = mean_return if self.running_score is None else \
-                             0.9*self.running_score + 0.1*mean_return  # approx avg of last 10 iters
+        observations, actions, advantages, base_stats, self.running_score = self.process_paths(paths)
         if self.save_logs: self.log_rollout_statistics(paths)
 
         # Optimization algorithm
         # --------------------------
-        surr_before = self.CPI_surrogate(observations, actions, advantages).data.numpy().ravel()[0]
+        pg_surr = self.pg_surrogate(observations, actions, advantages)
+        surr_before = pg_surr.to('cpu').data.numpy().ravel()[0]
+        old_mean = self.policy.forward(observations).detach().clone()
+        old_log_std = self.policy.log_std.detach().clone()
+        old_LL = self.policy.mean_LL(observations, actions)[1].detach().clone()
         params_before_opt = self.policy.get_param_values()
 
         ts = timer.time()
         num_samples = observations.shape[0]
         for ep in range(self.epochs):
-            for mb in range(int(num_samples / self.mb_size)):
+            for mb in range(int(num_samples / self.mb_size) + 1):
                 rand_idx = np.random.choice(num_samples, size=self.mb_size)
                 obs = observations[rand_idx]
                 act = actions[rand_idx]
                 adv = advantages[rand_idx]
+                old_LL_mb = old_LL[rand_idx]
                 self.optimizer.zero_grad()
-                loss = - self.PPO_surrogate(obs, act, adv)
+                loss = - self.PPO_surrogate(obs, act, adv, old_LL_mb)
                 loss.backward()
                 self.optimizer.step()
 
         params_after_opt = self.policy.get_param_values()
-        surr_after = self.CPI_surrogate(observations, actions, advantages).data.numpy().ravel()[0]
-        kl_dist = self.kl_old_new(observations, actions).data.numpy().ravel()[0]
-        self.policy.set_param_values(params_after_opt, set_new=True, set_old=True)
+        self.policy.set_param_values(params_after_opt.clone())
+        pg_surr = self.pg_surrogate(observations, actions, advantages)
+        surr_after = pg_surr.to('cpu').data.numpy().ravel()[0]
+        kl_divergence = self.kl_old_new(observations, old_mean, old_log_std)
         t_opt = timer.time() - ts
 
         # Log information
         if self.save_logs:
             self.logger.log_kv('t_opt', t_opt)
-            self.logger.log_kv('kl_dist', kl_dist)
+            self.logger.log_kv('kl_divergence', kl_divergence)
             self.logger.log_kv('surr_improvement', surr_after - surr_before)
             self.logger.log_kv('running_score', self.running_score)
             try:
