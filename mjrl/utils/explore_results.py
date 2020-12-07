@@ -20,6 +20,10 @@ if '.png' in args.output:
 else:
     OUT_FILE = args.output + '/plot.png'
 data = pickle.load(open(args.data, 'rb'))
+xscale = args.xcale if 'act_repeat' not in data.keys() else data['act_repeat'][-1]
+dict_keys = list(data.keys())
+for k in dict_keys:
+    if len(data[k]) == 1: del(data[k])
 
 # plot layout
 nplt = len(data.keys())
@@ -28,7 +32,6 @@ nrow = int(np.ceil(nplt/ncol))
 
 # plot data
 xkey = args.xkey
-xscale = args.xcale if 'act_repeat' not in data.keys() else data['act_repeat'][-1]
 start_idx = 2
 end_idx = max([len(data[k]) for k in data.keys()])
 xdata = np.arange(end_idx) if xkey is None else \
@@ -40,7 +43,8 @@ for idx, key in enumerate(data.keys()):
     plt.subplot(nrow, ncol, idx+1)
     plt.tight_layout()
     try:
-        plt.plot(xdata[start_idx:end_idx], data[key][start_idx:end_idx], color=colors[idx%7], linewidth=3)
+        last_idx = min(end_idx, len(data[key]))
+        plt.plot(xdata[start_idx:last_idx], data[key][start_idx:last_idx], color=colors[idx%7], linewidth=3)
     except:
         pass
     plt.title(key)

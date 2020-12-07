@@ -1,0 +1,46 @@
+{
+
+# general inputs
+
+'env_name'      :   'Hopper-v3',
+'act_repeat'    :   2,
+'seed'          :   123,
+'num_iter'      :   500,
+'eval_rollouts' :   4,
+'num_models'    :   4,
+'save_freq'     :   25,
+'device'        :   'cuda',
+'learn_reward'  :   False,
+'data_file'     :   'datasets/hopper_v3_dataset.pickle',
+'reward_file'   :   '../model_based_npg/utils/reward_functions/gym_hopper.py',
+'model_file'    :   None,  # specify path to model file here if required
+'init_policy'   :   'logging_policy/hopper_v3.pickle',
+'pessimism_coef':   0.5,
+'truncate_reward' : 0.0,
+'exp_notes'     :   'Example to illustrate MOReL.',
+
+# dynamics learning
+
+'hidden_size'   :   (512, 512),
+'activation'    :   'relu',
+'fit_lr'        :   1e-3,
+'fit_wd'        :   0.0,
+'fit_mb_size'   :   1000,
+'fit_epochs'    :   100,
+'refresh_fit'   :   False,
+'max_steps'     :   1e8,
+
+# NPG params
+
+'policy_size'   :   (64, 64),
+'step_size'     :   0.02,
+'init_log_std'  :   -0.25,
+'min_log_std'   :   -2.0,
+'gamma'         :   0.999,
+'gae_lambda'    :   0.97,
+'update_paths'  :   50,
+'start_state'   :   'init',
+'horizon'       :   500,
+'npg_hp'        :   dict(FIM_invert_args={'iters': 25, 'damping': 1e-3}),
+
+}

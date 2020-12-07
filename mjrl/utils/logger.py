@@ -48,6 +48,13 @@ class DataLog:
             row_dict[key] = self.log[key][-1]
         return row_dict
 
+    def get_current_log_print(self):
+        row_dict = {}
+        for key in self.log.keys():
+            # TODO: this is very error-prone (alignment is not guaranteed)
+            if len(self.log[key]) > 1 : row_dict[key] = self.log[key][-1]
+        return row_dict
+
     def shrink_to(self, num_entries):
         for key in self.log.keys():
             self.log[key] = self.log[key][:num_entries]

@@ -166,6 +166,8 @@ def sample_data_batch(
 
     start_time = timer.time()
     print("####### Gathering Samples #######")
+    horizon = min(horizon, env.horizon)
+    if paths_per_call == 'max': paths_per_call = num_samples // (horizon * num_cpu * 4) + 1
     sampled_so_far = 0
     paths_so_far = 0
     paths = []
