@@ -22,13 +22,20 @@ python ../../mjrl/utils/explore_results.py --output Hopper-v3-pal-example/plot.p
 
 <td><img src="assets/example_result.png"></td>
 
+## Notes on Reward and Termination Functions
+
+- In the above `Hopper-v3` example (from Gym), we also passed on a file that provides rewards and termination functions. Typically these functions are known for most applications and we should make use of it. 
+- If for some applications, reward functions are unknown or unavailable, the `config_file` can be modified to have `learn_reward = True` and `reward_file = None`. In our experience, the results are comparable since learning the reward function is typically much easier than learning the dynamics.
+- Note that when learning reward functions, we parameterize the function as: <a href="https://www.codecogs.com/eqnedit.php?latex=\small&space;r_\phi&space;(s,&space;a,&space;f_\theta(s,a))" target="_blank"><img src="https://latex.codecogs.com/svg.latex?\small&space;r_\phi&space;(s,&space;a,&space;f_\theta(s,a))" title="\small r_\phi (s, a, f_\theta(s,a))" /></a>, where `s'=f(s,a)` is the learned dynamics model. By coupling the reward and dynamics models, we observed easier and more stable learning.
+- Termination functions are generally more important, but are almost always known, since they are human written. If termination functions are unknown for a task, we recommend looking at [MOReL](https://github.com/aravindr93/mjrl/tree/v2/projects/morel) and using a disagreement based termination function which does not require any domain knowledge.
+
 ## PAL & MAL: A Quick Guide
 
 The main difference between PAL and MAL is the ratio of the speed of model learning and speed of policy learning. 
 
 - The speed of model learning is primarily governed by the size of the replay buffer and the number of epochs. When using a small buffer and large epochs, the model will adapt rapidly to more recent data and will learn very quickly, but might forget old data. When using a very large buffer, the model learning has more memory, and the outputs (predictions) of the model will change very slowly. The learning rate of optimizer can also be used to control the model learning speed. However, in practice, we will mostly just fix the learning rate to the default of Adam.
 
-- The speed of policy learning is primarily governed by the number of NPG steps and the NPG step size. In practice, we will fix the NPG step size to be a reasonable value (typically `0.01-0.05`), and focus primarily on the number of NPG steps.
+- The speed of policy learning is primarily governed by the number of NPG steps and the NPG step size. In practice, we will fix the NPG step size to be a reasonable value (typically **0.01-0.05**), and focus primarily on the number of NPG steps.
 
 - PAL corresponds to conservative policy learning and aggressive model learning. Thus, we will generally have small replay buffers and take only **1-5** steps of NPG.
 
