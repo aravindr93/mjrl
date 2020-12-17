@@ -6,7 +6,7 @@
 'act_repeat'    :   2,
 'seed'          :   123,
 'debug_mode'    :   False,
-'num_iter'      :   50,
+'num_iter'      :   25,
 'iter_samples'  :   2000,
 'eval_rollouts' :   5,
 'num_models'    :   4,
@@ -31,7 +31,7 @@
 # initial data
 
 'init_log_std'  :   -0.5,
-'min_log_std'   :   -3.0,
+'min_log_std'   :   -2.5,
 'init_samples'  :   10000,
 'init_policy'   :   None,
 
@@ -43,7 +43,7 @@
 'step_size'     :   0.05,
 'gamma'         :   0.999,
 'gae_lambda'    :   0.97,
-'update_paths'  :   20,
+'update_paths'  :   25,
 'start_state'   :   'init',
 'horizon'       :   500,
 'npg_hp'        :   dict(FIM_invert_args={'iters': 25, 'damping': 1e-3}),

@@ -38,11 +38,12 @@ If you use the code in MOReL and `mjrl` in general, please cite the below papers
     YEAR      = {2020},
 }
 
-@INPROCEEDINGS{Rajeswaran-NIPS-17,
-    AUTHOR    = {Aravind Rajeswaran and Kendall Lowrey and Emanuel Todorov and Sham Kakade},
-    TITLE     = "{Towards Generalization and Simplicity in Continuous Control}",
-    BOOKTITLE = {NIPS},
-    YEAR      = {2017},
+@INPROCEEDINGS{Rajeswaran-Game-MBRL,
+    AUTHOR    = {Aravind Rajeswaran AND Igor Mordatch AND Vikash Kumar},
+    TITLE     = "{A Game Theoretic Framework for
+Model-Based Reinforcement Learning}",
+    BOOKTITLE = {ICML},
+    YEAR      = {2020},
 }
 
 @INPROCEEDINGS{Rajeswaran-RSS-18,

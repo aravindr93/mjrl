@@ -31,7 +31,7 @@
 # initial data
 
 'init_log_std'  :   -0.5,
-'min_log_std'   :   -3.0,  #-2.5
+'min_log_std'   :   -2.5,
 'init_samples'  :   4000,
 'init_policy'   :   None,
 

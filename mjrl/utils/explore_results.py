@@ -11,7 +11,7 @@ parser = argparse.ArgumentParser(description='Script to explore the data generat
 parser.add_argument('--data', '-d', type=str, required=True, help='location of the .pickle log data file')
 parser.add_argument('--output', '-o', type=str, required=True, help='location to store results as a png')
 parser.add_argument('--xkey', '-x', type=str, default=None, help='the key to use for x axis in plots')
-parser.add_argument('--xcale', '-s', type=int, default=1, help='scaling for the x axis (optional)')
+parser.add_argument('--xscale', '-s', type=int, default=1, help='scaling for the x axis (optional)')
 args = parser.parse_args()
 
 # get inputs and setup output file
@@ -20,7 +20,10 @@ if '.png' in args.output:
 else:
     OUT_FILE = args.output + '/plot.png'
 data = pickle.load(open(args.data, 'rb'))
-xscale = args.xcale if 'act_repeat' not in data.keys() else data['act_repeat'][-1]
+xscale = 1 if args.xscale is None else args.xscale
+if args.xkey == 'num_samples':
+    xscale = xscale if 'act_repeat' not in data.keys() else data['act_repeat'][-1]
+
 dict_keys = list(data.keys())
 for k in dict_keys:
     if len(data[k]) == 1: del(data[k])
