@@ -22,6 +22,7 @@ class BC:
                  loss_type = 'MSE',  # can be 'MLE' or 'MSE'
                  save_logs = True,
                  set_transforms = False,
+                 **kwargs,
                  ):
 
         self.policy = policy

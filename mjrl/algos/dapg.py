@@ -33,6 +33,7 @@ class DAPG(NPG):
                  kl_dist=None,
                  lam_0=1.0,  # demo coef
                  lam_1=0.95, # decay coef
+                 **kwargs,
                  ):
 
         self.env = env
