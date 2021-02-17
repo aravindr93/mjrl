@@ -23,6 +23,7 @@ class BC:
                  loss_type = 'MSE',  # can be 'MLE' or 'MSE'
                  save_logs = True,
                  set_transforms = False,
+                 *args, **kwargs,
                  ):
 
         self.policy = policy
@@ -32,6 +33,7 @@ class BC:
         self.logger = DataLog()
         self.loss_type = loss_type
         self.save_logs = save_logs
+        self.device = self.policy.device
         assert (self.loss_type == 'MSE' or self.loss_type == 'MLE')
 
         if set_transforms:
@@ -68,9 +70,8 @@ class BC:
     def set_variance_with_data(self, out_scale):
         # set the variance of gaussian policy based on out_scale
         out_scale = tensorize(out_scale, device=self.policy.device)
-        params = self.policy.get_param_values()
-        params[-self.policy.action_dim:] = torch.log(out_scale + 1e-3)
-        self.policy.set_param_values(params)
+        data_log_std = torch.log(out_scale + 1e-3)
+        self.policy.set_log_std(data_log_std)
 
     def loss(self, data, idx=None):
         if self.loss_type == 'MLE':
@@ -113,7 +114,7 @@ class BC:
 
         # log stats before
         if self.save_logs:
-            loss_val = self.loss(data, idx=range(num_samples)).data.numpy().ravel()[0]
+            loss_val = self.loss(data, idx=range(num_samples)).to('cpu').data.numpy().ravel()[0]
             self.logger.log_kv('loss_before', loss_val)
 
         # train loop
@@ -130,7 +131,7 @@ class BC:
         # log stats after
         if self.save_logs:
             self.logger.log_kv('epoch', self.epochs)
-            loss_val = self.loss(data, idx=range(num_samples)).data.numpy().ravel()[0]
+            loss_val = self.loss(data, idx=range(num_samples)).to('cpu').data.numpy().ravel()[0]
             self.logger.log_kv('loss_after', loss_val)
             self.logger.log_kv('time', (timer.time()-ts))
 
@@ -148,3 +149,4 @@ def config_tqdm(range_inp, suppress_tqdm=False):
         return range_inp
     else:
         return tqdm(range_inp)
+

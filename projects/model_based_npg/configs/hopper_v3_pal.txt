@@ -30,7 +30,7 @@
 
 # initial data
 
-'init_log_std'  :   -0.5,
+'init_log_std'  :   0.0,
 'min_log_std'   :   -2.5,
 'init_samples'  :   4000,
 'init_policy'   :   None,

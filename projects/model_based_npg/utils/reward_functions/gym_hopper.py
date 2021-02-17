@@ -30,7 +30,7 @@ def termination_function(paths):
         t = 0
         done = False
         while t < T and done is False:
-            done = not ((np.abs(obs[t]) < 10).all() and (height[t] > 0.7) and (np.abs(angle[t]) < 0.2))
+            done = not ((np.abs(obs[t]) < 10).all() and (height[t] > 0.7) and (np.abs(angle[t]) < 0.15))
             t = t + 1
             T = t if done else T
         path["observations"] = path["observations"][:T]

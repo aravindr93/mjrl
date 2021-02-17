@@ -139,7 +139,6 @@ if 'init_policy' in job_data.keys():
 else:
     policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'], 
                     init_log_std=job_data['init_log_std'], min_log_std=job_data['min_log_std'])
-    # TODO(Aravind): Include optional policy initialization with behavior cloning
 
 baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=256, epochs=1,  learn_rate=1e-3,
                        device=job_data['device'])               
@@ -207,11 +206,11 @@ for idx_1, model_1 in enumerate(models):
             delta = np.maximum(delta, disagreement)
 
 if 'pessimism_coef' in job_data.keys():
-    if job_data['pessimism_coef'] is None:
+    if job_data['pessimism_coef'] is None or job_data['pessimism_coef'] == 0.0:
         truncate_lim = None
         print("No pessimism used. Running naive MBRL.")
     else:
-        truncate_lim = job_data['pessimism_coef'] * np.max(delta)
+        truncate_lim = (1.0 / job_data['pessimism_coef']) * np.max(delta)
         print("Maximum error before truncation (i.e. unknown region threshold) = %f" % truncate_lim)
     job_data['truncate_lim'] = truncate_lim
     job_data['truncate_reward'] = job_data['truncate_reward'] if 'truncate_reward' in job_data.keys() else 0.0
@@ -219,7 +218,20 @@ else:
     job_data['truncate_lim'] = None
     job_data['truncate_reward'] = 0.0
 
-with open(EXP_FILE, 'w') as f:  json.dump(job_data, f, indent=4)
+with open(EXP_FILE, 'w') as f:
+    job_data['seed'] = SEED
+    json.dump(job_data, f, indent=4)
+    del(job_data['seed'])
+
+# ===============================================================================
+# Behavior Cloning Initialization
+# ===============================================================================
+if 'bc_init' in job_data.keys():
+    if job_data['bc_init']:
+        from mjrl.algos.behavior_cloning import BC
+        policy.to(job_data['device'])
+        bc_agent = BC(paths, policy, epochs=5, batch_size=256, loss_type='MSE')
+        bc_agent.train()
 
 # ===============================================================================
 # Policy Optimization Loop
@@ -299,3 +311,4 @@ for outer_iter in range(job_data['num_iter']):
 pickle.dump(agent, open(OUT_DIR + '/iterations/agent_final.pickle', 'wb'))
 policy.set_transformations(in_scale = 1.0 / e.obs_mask)
 pickle.dump(policy, open(OUT_DIR + '/iterations/policy_final.pickle', 'wb'))
+
