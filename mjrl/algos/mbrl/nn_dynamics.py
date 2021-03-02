@@ -135,7 +135,8 @@ class WorldModel:
         if set_transformations:
             s_shift, a_shift = torch.mean(s, dim=0), torch.mean(a, dim=0)
             s_scale, a_scale = torch.mean(torch.abs(s-s_shift), dim=0), torch.mean(torch.abs(a-a_shift), dim=0)
-            r_shift, r_scale = torch.mean(r, dim=0), torch.mean(torch.abs(r-r_shift), dim=0)
+            r_shift = torch.mean(r, dim=0)
+            r_scale = torch.mean(torch.abs(r-r_shift), dim=0)
             self.reward_net.set_transformations(s_shift, s_scale, a_shift, a_scale, r_shift, r_scale)
 
         # get next state prediction
