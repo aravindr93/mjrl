@@ -13,8 +13,8 @@
 'learn_reward'  :   False,
 'data_file'     :   'datasets/hopper_v3_dataset.pickle',
 'reward_file'   :   '../model_based_npg/utils/reward_functions/gym_hopper.py',
-'model_file'    :   None,  # specify path to model file here if required
-'init_policy'   :   'logging_policy/hopper_v3.pickle',
+'model_file'    :   'hopper-v3-models.pickle',  # specify path to model file here if required
+'bc_init'       :   True,
 'pessimism_coef':   None,
 'truncate_reward' : 0.0,
 'exp_notes'     :   'Example to illustrate MOReL.',
