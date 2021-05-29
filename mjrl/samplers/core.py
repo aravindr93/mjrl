@@ -192,7 +192,7 @@ def _try_multiprocess(func, input_dict_list, num_cpu, max_process_time, max_time
     if max_timeouts == 0:
         return None
 
-    pool = mp.Pool(processes=num_cpu, maxtasksperchild=1)
+    pool = mp.Pool(processes=num_cpu, maxtasksperchild=None)
     parallel_runs = [pool.apply_async(func, kwds=input_dict) for input_dict in input_dict_list]
     try:
         results = [p.get(timeout=max_process_time) for p in parallel_runs]
