@@ -207,3 +207,8 @@ class BatchREINFORCE:
         self.logger.log_kv('stoc_pol_std', std_return)
         self.logger.log_kv('stoc_pol_max', max_return)
         self.logger.log_kv('stoc_pol_min', min_return)
+        try:
+            success_rate = self.env.env.env.evaluate_success(paths)
+            self.logger.log_kv('rollout_success', success_rate)
+        except:
+            pass
