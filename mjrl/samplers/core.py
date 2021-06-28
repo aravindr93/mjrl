@@ -139,9 +139,10 @@ def sample_paths(
                                 num_cpu, max_process_time, max_timeouts)
     paths = []
     # result is a paths type and results is list of paths
-    for result in results:
-        for path in result:
-            paths.append(path)  
+    if results:
+        for result in results:
+            for path in result:
+                paths.append(path)  
 
     if suppress_print is False:
         print("======= Samples Gathered  ======= | >>>> Time taken = %f " %(timer.time()-start_time) )
@@ -196,8 +197,15 @@ def _try_multiprocess(func, input_dict_list, num_cpu, max_process_time, max_time
         with concurrent.futures.ProcessPoolExecutor(max_workers=num_cpu) as executor:
             submit_futures = [executor.submit(func, **input_dict) for input_dict in input_dict_list]
             try:
-                results = [f.result(timeout=max_process_time) for f in submit_futures]
-            except Exception as e:
+                results = [f.result() for f in submit_futures]
+            except TimeoutError as e:
                 print(str(e))
                 print("Timeout Error raised...") 
+            except concurrent.futures.CancelledError as e:
+                print(str(e))
+                print("Future Cancelled Error raised...") 
+            except Exception as e:
+                print(str(e))
+                print("Error raised...") 
+                raise e
     return results
