@@ -29,7 +29,7 @@ CUDA_VISIBLE_DEVICES=0 python run_morel.py --config configs/d4rl_hopper_medium.t
 
 - The job directory (`hopper-medium-v0-example` in the above example) will contain experiment logs as well as periodic saving of learned policies. The experiment results can be quickly explored by using a plotting script included with `mjrl`.
 ```
-python ../../mjrl/utils/explore_results.py --output hopper-medium-v0-example/plot.png --data hopper-medium-v0-example/logs/log.pickle
+python ../../mjrl/utils/plot_from_logs.py --output hopper-medium-v0-example/plot.png --data hopper-medium-v0-example/logs/log.pickle
 ```
 
 - An example of the resulting plot is below. In the plot, `train_score` refers to the policy performance in the pessimistic MDP and `eval_score` refers to the value in the environment (unknown underlying MDP).

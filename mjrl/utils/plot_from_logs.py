@@ -37,7 +37,7 @@ nrow = int(np.ceil(nplt/ncol))
 xkey = args.xkey
 start_idx = 2
 end_idx = max([len(data[k]) for k in data.keys()])
-xdata = np.arange(end_idx) if xkey is None else \
+xdata = np.arange(end_idx) if xkey is None or xkey == 'None' else \
         [np.sum(data[xkey][:i+1]) * xscale for i in range(len(data[xkey]))]
 
 # make the plot

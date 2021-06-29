@@ -15,7 +15,7 @@ CUDA_VISIBLE_DEVICES=0 python run_model_based_npg.py --output Hopper-v3-pal-exam
 
 - The job directory (`Hopper-v3-pal-example` in the above case) will contain experiment logs as well as periodic saving of learned policies. The experiment results can be quickly explored by using a plotting script included with `mjrl`.
 ```
-python ../../mjrl/utils/explore_results.py --output Hopper-v3-pal-example/plot.png --data Hopper-v3-pal-example/logs/log.pickle --xkey num_samples
+python ../../mjrl/utils/plot_from_logs.py --output Hopper-v3-pal-example/plot.png --data Hopper-v3-pal-example/logs/log.pickle --xkey num_samples
 ```
 
 - An example of the above produces the following plot. The x axis is the number of samples environment interactions (samples). Look for the train_score and eval_score plots which are the performances of the Gaussian policy and the mean of the Gaussian policy respectively. As we can see, the PAL setting of model-based NPG leads to highly sample efficient learning of a successful policy. 
