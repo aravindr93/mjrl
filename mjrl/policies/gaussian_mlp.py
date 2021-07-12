@@ -12,6 +12,7 @@ class MLP(torch.nn.Module):
                  device='cpu',
                  observation_dim=None,
                  action_dim=None,
+                 max_log_std=1.0,
                  *args, **kwargs,
                  ):
         """
@@ -31,11 +32,10 @@ class MLP(torch.nn.Module):
         # self.device = device
         self.seed = seed
 
-        if type(min_log_std) == np.ndarray:
-            self.min_log_std = torch.from_numpy(min_log_std).to(device)
-        else:
-            self.min_log_std = torch.ones(self.action_dim) * min_log_std
-            self.min_log_std = self.min_log_std.to(device)
+        self.min_log_std_val = min_log_std if type(min_log_std)==np.ndarray else min_log_std * np.ones(self.action_dim)
+        self.max_log_std_val = max_log_std if type(max_log_std)==np.ndarray else max_log_std * np.ones(self.action_dim)
+        self.min_log_std = tensorize(self.min_log_std_val, device=device)
+        self.max_log_std = tensorize(self.max_log_std_val, device=device)
 
         # Set seed
         # ------------------------
@@ -52,6 +52,8 @@ class MLP(torch.nn.Module):
         for param in list(self.parameters())[-2:]:  # only last layer
            param.data = 1e-2 * param.data
         self.log_std = torch.nn.Parameter(torch.ones(self.action_dim) * init_log_std, requires_grad=True)
+        self.log_std.data = torch.max(self.log_std.data, self.min_log_std)
+        self.log_std.data = torch.min(self.log_std.data, self.max_log_std)
         self.trainable_params = list(self.parameters())
         # transform variables
         self.in_shift, self.in_scale = torch.zeros(self.observation_dim), torch.ones(self.observation_dim)
@@ -60,6 +62,8 @@ class MLP(torch.nn.Module):
         # Easy access variables
         # -------------------------
         self.log_std_val = self.log_std.to('cpu').data.numpy().ravel()
+        # clamp log_std to [min_log_std, max_log_std]
+        self.log_std_val = np.clip(self.log_std_val, self.min_log_std_val, self.max_log_std_val)
         self.param_shapes = [p.data.numpy().shape for p in self.trainable_params]
         self.param_sizes = [p.data.numpy().size for p in self.trainable_params]
         self.d = np.sum(self.param_sizes)  # total number of params
@@ -91,7 +95,7 @@ class MLP(torch.nn.Module):
     # ============================================
     def to(self, device):
         super().to(device)
-        self.min_log_std = self.min_log_std.to(device)
+        self.min_log_std, self.max_log_std = self.min_log_std.to(device), self.max_log_std.to(device)
         self.in_shift, self.in_scale = self.in_shift.to(device), self.in_scale.to(device)
         self.out_shift, self.out_scale = self.out_shift.to(device), self.out_scale.to(device)
         self.trainable_params = list(self.parameters())
@@ -108,10 +112,12 @@ class MLP(torch.nn.Module):
             vals = vals.reshape(self.param_shapes[idx])
             # clip std at minimum value
             vals = torch.max(vals, self.min_log_std) if idx == 0 else vals
+            vals = torch.min(vals, self.max_log_std) if idx == 0 else vals
             param.data = vals.to(self.device).clone()
             current_idx += self.param_sizes[idx]
         # update log_std_val for sampling
         self.log_std_val = np.float64(self.log_std.to('cpu').data.numpy().ravel())
+        self.log_std_val = np.clip(self.log_std_val, self.min_log_std_val, self.max_log_std_val)
         self.trainable_params = list(self.parameters())
 
     def set_transformations(self, in_shift=None, in_scale=None, 

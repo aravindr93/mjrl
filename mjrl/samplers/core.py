@@ -1,10 +1,11 @@
+import concurrent.futures
 import logging
+import multiprocessing as mp
 import numpy as np
+import time as timer
+
 from mjrl.utils.gym_env import GymEnv
 from mjrl.utils import tensor_utils
-logging.disable(logging.CRITICAL)
-import multiprocessing as mp
-import time as timer
 logging.disable(logging.CRITICAL)
 
 
@@ -18,6 +19,8 @@ def do_rollout(
         horizon = 1e6,
         base_seed = None,
         env_kwargs=None,
+        *args,
+        **kwargs,
 ):
     """
     :param num_traj:    number of trajectories (int)
@@ -108,6 +111,8 @@ def sample_paths(
         max_timeouts=4,
         suppress_print=False,
         env_kwargs=None,
+        *args,
+        **kwargs,
         ):
 
     num_cpu = 1 if num_cpu is None else num_cpu
@@ -138,9 +143,10 @@ def sample_paths(
                                 num_cpu, max_process_time, max_timeouts)
     paths = []
     # result is a paths type and results is list of paths
-    for result in results:
-        for path in result:
-            paths.append(path)  
+    if results:
+        for result in results:
+            for path in result:
+                paths.append(path)  
 
     if suppress_print is False:
         print("======= Samples Gathered  ======= | >>>> Time taken = %f " %(timer.time()-start_time) )
@@ -158,6 +164,8 @@ def sample_data_batch(
         num_cpu = 1,
         paths_per_call = 1,
         env_kwargs=None,
+        *args,
+        **kwargs,
         ):
 
     num_cpu = 1 if num_cpu is None else num_cpu
@@ -172,6 +180,7 @@ def sample_data_batch(
     paths_so_far = 0
     paths = []
     base_seed = 123 if base_seed is None else base_seed
+    print("num_cpu %i horizon %i paths_per_call %i" % (num_cpu, horizon, paths_per_call))
     while sampled_so_far < num_samples:
         base_seed = base_seed + 12345
         new_paths = sample_paths(paths_per_call * num_cpu, env, policy,
@@ -189,24 +198,25 @@ def sample_data_batch(
 
 
 def _try_multiprocess(func, input_dict_list, num_cpu, max_process_time, max_timeouts):
-    
-    # Base case
-    if max_timeouts == 0:
-        return None
-
-    pool = mp.Pool(processes=num_cpu, maxtasksperchild=1)
-    parallel_runs = [pool.apply_async(func, kwds=input_dict) for input_dict in input_dict_list]
-    try:
-        results = [p.get(timeout=max_process_time) for p in parallel_runs]
-    except Exception as e:
-        print(str(e))
-        print("Timeout Error raised... Trying again")
-        pool.close()
-        pool.terminate()
-        pool.join()
-        return _try_multiprocess(func, input_dict_list, num_cpu, max_process_time, max_timeouts-1)
-
-    pool.close()
-    pool.terminate()
-    pool.join()  
+    results = None
+    if max_timeouts != 0:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=num_cpu) as executor:
+            submit_futures = [executor.submit(func, **input_dict) for input_dict in input_dict_list]
+            try:
+                results = [f.result() for f in submit_futures]
+            except TimeoutError as e:
+                print(str(e))
+                print("Timeout Error raised...")
+                print("Trying again..........")
+                return _try_multiprocess(func, input_dict_list, num_cpu, max_process_time, max_timeouts-1)
+            except concurrent.futures.CancelledError as e:
+                print(str(e))
+                print("Future Cancelled Error raised...") 
+                print("Trying again..........")
+                return _try_multiprocess(func, input_dict_list, num_cpu, max_process_time, max_timeouts-1)
+            except Exception as e:
+                print(str(e))
+                print("Error raised...")
+                print("Run aborted. Error looks complicated, requires debugging.")
+                raise e
     return results

@@ -114,6 +114,11 @@ def train_agent(job_name, agent,
             mean_pol_perf = np.mean([np.sum(path['rewards']) for path in eval_paths])
             if agent.save_logs:
                 agent.logger.log_kv('eval_score', mean_pol_perf)
+                try:
+                    eval_success = e.env.env.evaluate_success(eval_paths)
+                    agent.logger.log_kv('eval_success', eval_success)
+                except:
+                    pass
 
         if i % save_freq == 0 and i > 0:
             if agent.save_logs:
