@@ -19,6 +19,8 @@ def do_rollout(
         horizon = 1e6,
         base_seed = None,
         env_kwargs=None,
+        *args,
+        **kwargs,
 ):
     """
     :param num_traj:    number of trajectories (int)
@@ -109,6 +111,8 @@ def sample_paths(
         max_timeouts=4,
         suppress_print=False,
         env_kwargs=None,
+        *args,
+        **kwargs,
         ):
 
     num_cpu = 1 if num_cpu is None else num_cpu
@@ -160,6 +164,8 @@ def sample_data_batch(
         num_cpu = 1,
         paths_per_call = 1,
         env_kwargs=None,
+        *args,
+        **kwargs,
         ):
 
     num_cpu = 1 if num_cpu is None else num_cpu
@@ -200,12 +206,17 @@ def _try_multiprocess(func, input_dict_list, num_cpu, max_process_time, max_time
                 results = [f.result() for f in submit_futures]
             except TimeoutError as e:
                 print(str(e))
-                print("Timeout Error raised...") 
+                print("Timeout Error raised...")
+                print("Trying again..........")
+                return _try_multiprocess(func, input_dict_list, num_cpu, max_process_time, max_timeouts-1)
             except concurrent.futures.CancelledError as e:
                 print(str(e))
                 print("Future Cancelled Error raised...") 
+                print("Trying again..........")
+                return _try_multiprocess(func, input_dict_list, num_cpu, max_process_time, max_timeouts-1)
             except Exception as e:
                 print(str(e))
-                print("Error raised...") 
+                print("Error raised...")
+                print("Run aborted. Error looks complicated, requires debugging.")
                 raise e
     return results
