@@ -126,7 +126,7 @@ def sample_paths(
     paths_per_cpu = int(np.ceil(num_traj/num_cpu))
     input_dict_list= []
     for i in range(num_cpu):
-        input_dict = dict(num_traj=paths_per_cpu, env=env.env_id, policy=policy,
+        input_dict = dict(num_traj=paths_per_cpu, env=env, policy=policy,
                           eval_mode=eval_mode, horizon=horizon,
                           base_seed=base_seed + i * paths_per_cpu,
                           env_kwargs=env_kwargs)
@@ -135,8 +135,6 @@ def sample_paths(
         start_time = timer.time()
         print("####### Gathering Samples #######")
 
-    print("Input Dict List %s" % (str(input_dict_list)))
-    
     results = _try_multiprocess(do_rollout, input_dict_list,
                                 num_cpu, max_process_time, max_timeouts)
     paths = []
