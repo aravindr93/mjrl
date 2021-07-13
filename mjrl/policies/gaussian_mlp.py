@@ -29,13 +29,13 @@ class MLP(torch.nn.Module):
             assert action_dim is not None
         self.observation_dim = env_spec.observation_dim if env_spec is not None else observation_dim   # number of states
         self.action_dim = env_spec.action_dim if env_spec is not None else action_dim                  # number of actions
-        # self.device = device
+        self.device = device
         self.seed = seed
 
         self.min_log_std_val = min_log_std if type(min_log_std)==np.ndarray else min_log_std * np.ones(self.action_dim)
         self.max_log_std_val = max_log_std if type(max_log_std)==np.ndarray else max_log_std * np.ones(self.action_dim)
-        self.min_log_std = tensorize(self.min_log_std_val, device=device)
-        self.max_log_std = tensorize(self.max_log_std_val, device=device)
+        self.min_log_std = tensorize(self.min_log_std_val)
+        self.max_log_std = tensorize(self.max_log_std_val)
 
         # Set seed
         # ------------------------
