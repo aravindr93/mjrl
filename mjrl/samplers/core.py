@@ -134,8 +134,6 @@ def sample_paths(
         start_time = timer.time()
         print("####### Gathering Samples #######")
 
-    print("Input Dict List %s" % (str(input_dict_list)))
-
     results = _try_multiprocess_cf(do_rollout, input_dict_list,
                                 num_cpu, max_process_time, max_timeouts)
     paths = []
