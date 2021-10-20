@@ -170,7 +170,8 @@ class MujocoEnv(gym.Env):
                                    mode='exploration',
                                    save_loc='/tmp/',
                                    filename='newvid',
-                                   camera_name=None):
+                                   camera_name=None,
+                                   outputdict=None):
         import skvideo.io
         for ep in range(num_episodes):
             print("Episode %d: rendering offline " % ep, end='', flush=True)
@@ -188,7 +189,7 @@ class MujocoEnv(gym.Env):
                 arrs.append(curr_frame[::-1,:,:])
                 print(t, end=', ', flush=True)
             file_name = save_loc + filename + str(ep) + ".mp4"
-            skvideo.io.vwrite( file_name, np.asarray(arrs))
+            skvideo.io.vwrite( file_name, np.asarray(arrs),outputdict)
             print("saved", file_name)
             t1 = timer.time()
             print("time taken = %f"% (t1-t0))
