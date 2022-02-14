@@ -1,5 +1,5 @@
 import numpy as np
-from mjrl.utils.fc_network import FCNetwork
+from mjrl.utils.fc_network import FCNetwork, FCNetworkWithBatchNorm
 import torch
 from torch.autograd import Variable
 
@@ -143,3 +143,62 @@ class MLP:
         Dr = 2 * new_std ** 2 + 1e-8
         sample_kl = torch.sum(Nr / Dr + new_log_std - old_log_std, dim=1)
         return torch.mean(sample_kl)
+
+
+class BatchNormMLP(MLP):
+    def __init__(self, env_spec,
+                 hidden_sizes=(64,64),
+                 min_log_std=-3,
+                 init_log_std=0,
+                 seed=None,
+                 nonlinearity='relu',
+                 *args, **kwargs,
+                 ):
+        """
+        :param env_spec: specifications of the env (see utils/gym_env.py)
+        :param hidden_sizes: network hidden layer sizes (currently 2 layers only)
+        :param min_log_std: log_std is clamped at this value and can't go below
+        :param init_log_std: initial log standard deviation
+        :param seed: random seed
+        """
+        # super(BatchNormMLP, self).__init__()
+
+        self.n = env_spec.observation_dim  # number of states
+        self.m = env_spec.action_dim  # number of actions
+        self.min_log_std = min_log_std
+
+        # Set seed
+        # ------------------------
+        if seed is not None:
+            torch.manual_seed(seed)
+            np.random.seed(seed)
+
+        # Policy network
+        # ------------------------
+        self.model = FCNetworkWithBatchNorm(self.n, self.m, hidden_sizes, nonlinearity)
+        # make weights small
+        for param in list(self.model.parameters())[-2:]:  # only last layer
+           param.data = 1e-2 * param.data
+        self.log_std = Variable(torch.ones(self.m) * init_log_std, requires_grad=True)
+        self.trainable_params = list(self.model.parameters()) + [self.log_std]
+        self.model.eval()
+
+        # Old Policy network
+        # ------------------------
+        self.old_model = FCNetworkWithBatchNorm(self.n, self.m, hidden_sizes, nonlinearity)
+        self.old_log_std = Variable(torch.ones(self.m) * init_log_std)
+        self.old_params = list(self.old_model.parameters()) + [self.old_log_std]
+        for idx, param in enumerate(self.old_params):
+            param.data = self.trainable_params[idx].data.clone()
+        self.old_model.eval()
+
+        # Easy access variables
+        # -------------------------
+        self.log_std_val = np.float64(self.log_std.data.numpy().ravel())
+        self.param_shapes = [p.data.numpy().shape for p in self.trainable_params]
+        self.param_sizes = [p.data.numpy().size for p in self.trainable_params]
+        self.d = np.sum(self.param_sizes)  # total number of params
+
+        # Placeholders
+        # ------------------------
+        self.obs_var = Variable(torch.randn(self.n), requires_grad=False)
