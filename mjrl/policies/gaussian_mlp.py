@@ -152,6 +152,7 @@ class BatchNormMLP(MLP):
                  init_log_std=0,
                  seed=None,
                  nonlinearity='relu',
+                 dropout=0,
                  *args, **kwargs,
                  ):
         """
@@ -175,7 +176,7 @@ class BatchNormMLP(MLP):
 
         # Policy network
         # ------------------------
-        self.model = FCNetworkWithBatchNorm(self.n, self.m, hidden_sizes, nonlinearity)
+        self.model = FCNetworkWithBatchNorm(self.n, self.m, hidden_sizes, nonlinearity, dropout)
         # make weights small
         for param in list(self.model.parameters())[-2:]:  # only last layer
            param.data = 1e-2 * param.data
@@ -185,7 +186,7 @@ class BatchNormMLP(MLP):
 
         # Old Policy network
         # ------------------------
-        self.old_model = FCNetworkWithBatchNorm(self.n, self.m, hidden_sizes, nonlinearity)
+        self.old_model = FCNetworkWithBatchNorm(self.n, self.m, hidden_sizes, nonlinearity, dropout)
         self.old_log_std = Variable(torch.ones(self.m) * init_log_std)
         self.old_params = list(self.old_model.parameters()) + [self.old_log_std]
         for idx, param in enumerate(self.old_params):

@@ -68,6 +68,8 @@ class FCNetworkWithBatchNorm(nn.Module):
     def __init__(self, obs_dim, act_dim,
                  hidden_sizes=(64,64),
                  nonlinearity='relu',   # either 'tanh' or 'relu'
+                 dropout=0,           # probability to dropout activations (0 means no dropout)
+                 *args, **kwargs,
                 ):
         super(FCNetworkWithBatchNorm, self).__init__()
 
@@ -82,12 +84,14 @@ class FCNetworkWithBatchNorm(nn.Module):
                          for i in range(len(self.layer_sizes) -1)])
         self.nonlinearity = torch.relu if nonlinearity == 'relu' else torch.tanh
         self.input_batchnorm = nn.BatchNorm1d(num_features=obs_dim)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         out = x.to(self.device)
         out = self.input_batchnorm(out)
         for i in range(len(self.fc_layers)-1):
             out = self.fc_layers[i](out)
+            out = self.dropout(out)
             out = self.nonlinearity(out)
         out = self.fc_layers[-1](out)
         return out
