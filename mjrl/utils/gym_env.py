@@ -15,9 +15,9 @@ class EnvSpec(object):
 
 class GymEnv(object):
     def __init__(self, env, env_kwargs=None,
-                 obs_mask=None, act_repeat=1, 
+                 obs_mask=None, act_repeat=1,
                  *args, **kwargs):
-    
+
         # get the correct env behavior
         if type(env) == str:
             env = gym.make(env)
@@ -30,7 +30,7 @@ class GymEnv(object):
             raise AttributeError
 
         self.env = env
-        self.env_id = env.spec.id
+        self.env_id = env.unwrapped.spec.id
         self.act_repeat = act_repeat
 
         try:
@@ -42,14 +42,14 @@ class GymEnv(object):
         self._horizon = self._horizon // self.act_repeat
 
         try:
-            self._action_dim = self.env.env.action_dim
-        except AttributeError:
             self._action_dim = self.env.action_space.shape[0]
+        except AttributeError:
+            self._action_dim = self.env.unwrapped.action_dim
 
         try:
-            self._observation_dim = self.env.env.obs_dim
-        except AttributeError:
             self._observation_dim = self.env.observation_space.shape[0]
+        except AttributeError:
+            self._observation_dim = self.env.unwrapped.obs_dim
 
         # Specs
         self.spec = EnvSpec(self._observation_dim, self._action_dim, self._horizon)
@@ -80,7 +80,7 @@ class GymEnv(object):
     def reset(self, seed=None):
         try:
             self.env._elapsed_steps = 0
-            return self.env.env.reset_model(seed=seed)
+            return self.env.unwrapped.reset_model(seed=seed)
         except:
             if seed is not None:
                 self.set_seed(seed)
@@ -92,7 +92,7 @@ class GymEnv(object):
 
     def step(self, action):
         action = action.clip(self.action_space.low, self.action_space.high)
-        if self.act_repeat == 1: 
+        if self.act_repeat == 1:
             obs, cum_reward, done, ifo = self.env.step(action)
         else:
             cum_reward = 0.0
@@ -104,8 +104,8 @@ class GymEnv(object):
 
     def render(self):
         try:
-            self.env.env.mujoco_render_frames = True
-            self.env.env.mj_render()
+            self.env.unwrapped.mujoco_render_frames = True
+            self.env.unwrapped.mj_render()
         except:
             self.env.render()
 
@@ -117,13 +117,13 @@ class GymEnv(object):
 
     def get_obs(self):
         try:
-            return self.obs_mask * self.env.env.get_obs()
+            return self.obs_mask * self.env.get_obs()
         except:
-            return self.obs_mask * self.env.env._get_obs()
+            return self.obs_mask * self.env._get_obs()
 
     def get_env_infos(self):
         try:
-            return self.env.env.get_env_infos()
+            return self.env.unwrapped.get_env_infos()
         except:
             return {}
 
@@ -133,19 +133,19 @@ class GymEnv(object):
 
     def get_env_state(self):
         try:
-            return self.env.env.get_env_state()
+            return self.env.unwrapped.get_env_state()
         except:
             raise NotImplementedError
 
     def set_env_state(self, state_dict):
         try:
-            self.env.env.set_env_state(state_dict)
+            self.env.unwrapped.set_env_state(state_dict)
         except:
             raise NotImplementedError
 
     def real_env_step(self, bool_val):
         try:
-            self.env.env.real_step = bool_val
+            self.env.unwrapped.real_step = bool_val
         except:
             raise NotImplementedError
 
@@ -153,7 +153,7 @@ class GymEnv(object):
 
     def visualize_policy(self, policy, horizon=1000, num_episodes=1, mode='exploration'):
         try:
-            self.env.env.visualize_policy(policy, horizon, num_episodes, mode)
+            self.env.unwrapped.visualize_policy(policy, horizon, num_episodes, mode)
         except:
             for ep in range(num_episodes):
                 o = self.reset()
