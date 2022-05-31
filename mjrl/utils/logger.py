@@ -7,15 +7,26 @@ import pickle
 import os
 import csv
 
+# Defaults
+USERNAME = 'aravraj'
+WANDB_PROJECT = 'mjrl_test'
+
 class DataLog:
 
-    def __init__(self):
+    def __init__(self, use_wandb:bool = True,
+                 wandb_user:str = USERNAME,
+                 wandb_project:str = WANDB_PROJECT,
+                 wandb_config:dict = dict()) -> None:
+        self.use_wandb = use_wandb
+        if use_wandb:
+            import wandb
+            self.run = wandb.init(project=wandb_project, entity=wandb_user, config=wandb_config)
         self.log = {}
         self.max_len = 0
+        self.global_step = 0
 
     def log_kv(self, key, value):
         # logs the (key, value) pair
-
         # TODO: This implementation is error-prone:
         # it would be NOT aligned if some keys are missing during one iteration.
         if key not in self.log:
@@ -23,6 +34,8 @@ class DataLog:
         self.log[key].append(value)
         if len(self.log[key]) > self.max_len:
             self.max_len = self.max_len + 1
+        if self.use_wandb:
+            self.run.log({key: value}, step=self.global_step)
 
     def save_log(self, save_path):
         # TODO: Validate all lengths are the same.
@@ -55,6 +68,11 @@ class DataLog:
         self.max_len = num_entries
         assert min([len(series) for series in self.log.values()]) == \
             max([len(series) for series in self.log.values()])
+
+    def sync_log_with_wandb(self):
+        # Syncs the latest logged entries with wandb
+        latest_log = self.get_current_log()
+        self.run.log(latest_log, step=self.global_step)
 
     def read_log(self, log_path):
         assert log_path.endswith('log.csv')
