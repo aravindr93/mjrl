@@ -13,6 +13,7 @@ from mjrl.algos.npg_cg import NPG
 from mjrl.algos.batch_reinforce import BatchREINFORCE
 from mjrl.algos.ppo_clip import PPO
 from mjrl.utils.train_agent import train_agent
+from mjrl.utils.logger import DataLog
 import os
 import json
 import gym
@@ -81,6 +82,12 @@ elif job_data['algorithm'] == 'PPO':
     # There are many hyperparameters for PPO. They can be specified in config for pass through
     # or defaults in the PPO algorithm will be used
     agent = PPO(e, policy, baseline, save_logs=True, **job_data['alg_hyper_params'])
+
+
+# Update logger if WandB in Config
+if 'wandb_params' in job_data.keys() and job_data['wandb_params']['use_wandb']==True:
+    agent.logger = DataLog(**job_data['wandb_params'], wandb_config=job_data)
+
 
 print("========================================")
 print("Starting policy learning")
