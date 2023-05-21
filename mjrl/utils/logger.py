@@ -18,11 +18,12 @@ class DataLog:
                  wandb_user:str = USERNAME,
                  wandb_project:str = WANDB_PROJECT,
                  wandb_exp:str = None,
+                 wandb_logdir:str = None,
                  wandb_config:dict = dict()) -> None:
         self.use_wandb = use_wandb
         if use_wandb:
             import wandb
-            self.run = wandb.init(project=wandb_project, entity=wandb_user, config=wandb_config)
+            self.run = wandb.init(project=wandb_project, entity=wandb_user, dir=wandb_logdir, config=wandb_config)
             # Update exp name if explicitely specified
             if wandb_exp is not None: wandb.run.name = wandb_exp
 

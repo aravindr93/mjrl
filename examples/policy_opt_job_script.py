@@ -86,6 +86,10 @@ elif job_data['algorithm'] == 'PPO':
 
 # Update logger if WandB in Config
 if 'wandb_params' in job_data.keys() and job_data['wandb_params']['use_wandb']==True:
+    if 'wandb_logdir' in job_data['wandb_params']:
+        job_data['wandb_params']['wandb_logdir'] = os.path.join(JOB_DIR, job_data['wandb_params']['wandb_logdir'])
+    else:
+        job_data['wandb_params']['wandb_logdir'] = JOB_DIR
     agent.logger = DataLog(**job_data['wandb_params'], wandb_config=job_data)
 
 
