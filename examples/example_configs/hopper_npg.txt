@@ -29,5 +29,11 @@
 
 'alg_hyper_params'  :   dict(),
 
+'wandb_params':  {
+    'use_wandb'     : True,
+    'wandb_user'    : 'vikashplus',
+    'wandb_project' : 'mjrl_demo',
+    'wandb_exp'     : 'demo_exp',
+    }
 }
 
