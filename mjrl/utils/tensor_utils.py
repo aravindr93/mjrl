@@ -61,7 +61,7 @@ def high_res_normalize(probs):
 
 
 def stack_tensor_list(tensor_list):
-    return np.array(tensor_list)
+    return np.array(tensor_list, dtype=object)
     # tensor_shape = np.array(tensor_list[0]).shape
     # if tensor_shape is tuple():
     #     return np.array(tensor_list)

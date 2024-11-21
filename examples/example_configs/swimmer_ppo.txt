@@ -7,7 +7,7 @@
 'seed'              :   123,
 'sample_mode'       :   'trajectories',
 'rl_num_traj'       :   10,
-'rl_num_iter'       :   50,
+'rl_num_iter'       :   10,
 'num_cpu'           :   2,
 'save_freq'         :   25,
 'eval_rollouts'     :   None,
@@ -29,4 +29,10 @@
 
 'alg_hyper_params'  :   dict(clip_coef=0.2, epochs=10, mb_size=64, learn_rate=5e-4),
 
+'wandb_params':  {
+    'use_wandb'     : True,
+    'wandb_user'    : 'vikashplus',
+    'wandb_project' : 'mjrl_demo',
+    'wandb_exp'     : 'demo_exp',
+    }
 }

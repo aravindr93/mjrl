@@ -118,6 +118,7 @@ class BC:
             self.logger.log_kv('loss_before', loss_val)
 
         # train loop
+        self.policy.model.train()
         for ep in config_tqdm(range(self.epochs), suppress_fit_tqdm):
             for mb in range(int(num_samples / self.mb_size)):
                 rand_idx = np.random.choice(num_samples, size=self.mb_size)
@@ -125,6 +126,7 @@ class BC:
                 loss = self.loss(data, idx=rand_idx)
                 loss.backward()
                 self.optimizer.step()
+        self.policy.model.eval()
         params_after_opt = self.policy.get_param_values()
         self.policy.set_param_values(params_after_opt, set_new=True, set_old=True)
 
