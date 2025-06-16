@@ -93,11 +93,11 @@ class GymEnv(object):
     def step(self, action):
         action = action.clip(self.action_space.low, self.action_space.high)
         if self.act_repeat == 1: 
-            obs, cum_reward, done, ifo = self.env.step(action)
+            obs, cum_reward, _, done, ifo = self.env.step(action)
         else:
             cum_reward = 0.0
             for i in range(self.act_repeat):
-                obs, reward, done, ifo = self.env.step(action)
+                obs, reward, _, done, ifo = self.env.step(action)
                 cum_reward += reward
                 if done: break
         return self.obs_mask * obs, cum_reward, done, ifo
@@ -156,13 +156,13 @@ class GymEnv(object):
             self.env.env.visualize_policy(policy, horizon, num_episodes, mode)
         except:
             for ep in range(num_episodes):
-                o = self.reset()
+                o, _ = self.reset()
                 d = False
                 t = 0
                 score = 0.0
                 while t < horizon and d is False:
                     a = policy.get_action(o)[0] if mode == 'exploration' else policy.get_action(o)[1]['evaluation']
-                    o, r, d, _ = self.step(a)
+                    o, r, _, d, _ = self.step(a)
                     score = score + r
                     self.render()
                     t = t+1
@@ -194,7 +194,7 @@ class GymEnv(object):
                 self.render() if visual is True else None
                 o = self.get_obs()
                 a = policy.get_action(o)[1]['evaluation'] if mean_action is True else policy.get_action(o)[0]
-                o, r, done, _ = self.step(a)
+                o, r, _, done, _ = self.step(a)
                 ep_returns[ep] += (gamma ** t) * r
                 t += 1
 
