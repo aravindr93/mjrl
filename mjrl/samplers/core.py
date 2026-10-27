@@ -125,9 +125,10 @@ def sample_paths(
     paths_per_cpu = int(np.ceil(num_traj/num_cpu))
     input_dict_list= []
     for i in range(num_cpu):
+        worker_seed = None if base_seed is None else base_seed + i * paths_per_cpu
         input_dict = dict(num_traj=paths_per_cpu, env=env, policy=policy,
                           eval_mode=eval_mode, horizon=horizon,
-                          base_seed=base_seed + i * paths_per_cpu,
+                          base_seed=worker_seed,
                           env_kwargs=env_kwargs)
         input_dict_list.append(input_dict)
     if suppress_print is False:
